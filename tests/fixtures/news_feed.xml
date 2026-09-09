@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>Official Tech</title>
+  <item><title>Example AI Device launches globally</title><link>https://official.example/news/device</link><pubDate>Mon, 25 Aug 2026 01:30:00 GMT</pubDate><description>The company announced a new AI device and its availability.</description></item>
+  <item><title>Too early event</title><link>https://official.example/news/early</link><pubDate>Sun, 24 Aug 2026 15:59:59 GMT</pubDate><description>Outside Beijing target day.</description></item>
+  <item><title>Too late event</title><link>https://official.example/news/late</link><pubDate>Tue, 25 Aug 2026 16:00:00 GMT</pubDate><description>Outside Beijing target day.</description></item>
+</channel></rss>

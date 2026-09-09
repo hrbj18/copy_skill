@@ -1,0 +1,253 @@
+{
+  "selection_version": "1.0",
+  "business_date": "2026-08-28",
+  "selection_source": "user_approved_script",
+  "description": "四条用户指定国内科技新闻；无真实账号热度证据，编辑顺序不得解释为热度排名。",
+  "stories": [
+    {
+      "story_id": "wangzhe-wanxiangqi-launch",
+      "title_zh": "王者万象棋定档 2026 年 9 月 10 日上线",
+      "editorial_order": 1,
+      "selection_source": "user_approved_script",
+      "heat_status": "not_supplied",
+      "heat_score": null,
+      "heat_rank": null,
+      "account_coverage": 0,
+      "heat_evidence": [],
+      "facts": [
+        {
+          "claim": "App Store产品页显示《王者万象棋》预计于2026年9月10日推出。",
+          "status": "confirmed",
+          "source_name": "Apple App Store",
+          "source_url": "https://apps.apple.com/cn/app/%E7%8E%8B%E8%80%85%E4%B8%87%E8%B1%A1%E6%A3%8B/id1614798032",
+          "use": "上线日期与产品身份"
+        },
+        {
+          "claim": "IT之家报道对应定档信息并提供王者万象棋宣传视觉。",
+          "status": "confirmed",
+          "source_name": "IT之家",
+          "source_url": "https://www.ithome.com/0/995/302.htm",
+          "use": "交叉确认与视觉来源"
+        }
+      ],
+      "pending_verification": ["多端具体范围应按正式商店或厂商最终公告复核"],
+      "do_not_claim": ["不得把其他王者荣耀模式或其他自走棋描述为王者万象棋", "不得扩写未在来源确认的开发与运营信息"],
+      "visual_intent": {
+        "subject": "王者万象棋",
+        "event": "2026年9月10日上线定档",
+        "preferred": "上线宣传主视觉与当前产品玩法视觉"
+      },
+      "visual_source_site": "IT之家",
+      "visual_manifest_path": "output/visual-anchor-domestic-smoke/2026-08-28/wangzhe-wanxiangqi-launch/manifest.json",
+      "asset_reviews": {
+        "anchor-ea1f11c0d650b795": {
+          "visual_kind": "game_promo",
+          "subject_match": {"status": "pass", "reason": "画面明确显示王者万象棋角色与名称"},
+          "event_match": {"status": "pass", "reason": "画面明确标注9月10日全平台上线"},
+          "visual_usability": {"status": "pass", "reason": "清晰横版官方宣传构图，无播放器或社交UI"},
+          "relevance": "exact_subject_event",
+          "selection_reason": "主体和上线事件均直接可见，适合作为主图",
+          "composition_hint": "横屏16:9，保留角色群像和上线日期",
+          "crop_hint": "不得裁掉底部王者万象棋及9月10日文字",
+          "visual_qa": {"reviewed": true, "content": "王者万象棋角色登场宣传画，画面明确写有9月10日全平台上线", "accuracy": "精准对应游戏与定档事件", "duplicate_or_wrong": "非重复、非错误产品", "watermark_text": "无媒体水印；含官方SHOWTIME和上线日期宣传文字", "clarity": "1440×810，清晰", "orientation": "横屏16:9，适合主图"}
+        },
+        "anchor-61c085ec5df37e74": {
+          "visual_kind": "game_promo",
+          "subject_match": {"status": "pass", "reason": "画面明确写有王者万象棋迷你战"},
+          "event_match": {"status": "pass", "reason": "属于当前产品的玩法介绍视觉，可作为定档新闻产品备用图"},
+          "visual_usability": {"status": "pass", "reason": "清晰横版、无播放器或社交UI，与主图构图不同"},
+          "relevance": "current_official_product",
+          "selection_reason": "当前产品玩法视觉，与上线主视觉形成内容差异",
+          "composition_hint": "横屏16:9，可作玩法段落过渡",
+          "crop_hint": "保留玩法规则介绍文字，不放大为实机画面",
+          "visual_qa": {"reviewed": true, "content": "王者万象棋迷你战玩法规则介绍标题画面", "accuracy": "精准对应当前游戏玩法，作为信息型备用", "duplicate_or_wrong": "与主图内容和构图明显不同", "watermark_text": "无媒体水印；主体为玩法规则标题文字", "clarity": "1440×810，清晰", "orientation": "横屏16:9，适合过渡画面"}
+        }
+      },
+      "missing_visual_reason": "App Store当次响应受限；仅保留已经核对的准确媒体视觉。"
+    },
+    {
+      "story_id": "tang-daosheng-ai-marathon",
+      "title_zh": "汤道生谈腾讯 AI 长跑与“头一公里”",
+      "editorial_order": 2,
+      "selection_source": "user_approved_script",
+      "heat_status": "not_supplied",
+      "heat_score": null,
+      "heat_rank": null,
+      "account_coverage": 0,
+      "heat_evidence": [],
+      "facts": [
+        {
+          "claim": "腾讯云文章记录汤道生以马拉松和“头一公里”讨论腾讯AI的长期投入。",
+          "status": "confirmed",
+          "source_name": "腾讯云开发者社区",
+          "source_url": "https://developer.cloud.tencent.com/article/2732747",
+          "use": "文章事件与人物观点"
+        },
+        {
+          "claim": "IT之家报道对应文章内容。",
+          "status": "confirmed",
+          "source_name": "IT之家",
+          "source_url": "https://www.ithome.com/0/994/409.htm",
+          "use": "国内媒体交叉确认"
+        }
+      ],
+      "pending_verification": ["当前有限来源内没有取得本次文章事件的干净人物或发布视觉"],
+      "do_not_claim": ["不得把旧活动演讲截图说成本次文章发布现场", "来源没有直接支持时不得扩写为深夜发文"],
+      "visual_intent": {
+        "subject": "汤道生",
+        "event": "腾讯AI长跑与头一公里文章发布",
+        "preferred": "本次文章头图或同次事件权威媒体图片"
+      },
+      "visual_source_site": "IT之家",
+      "visual_manifest_path": "output/visual-anchor-domestic-smoke/2026-08-28/tang-daosheng-ai-marathon/manifest.json",
+      "asset_reviews": {
+        "anchor-f031ede2f7449b3b": {
+          "visual_kind": "video_screenshot",
+          "subject_match": {"status": "pass", "reason": "人物为汤道生"},
+          "event_match": {"status": "fail", "reason": "画面来自旧活动演讲，不能证明本次文章发布事件"},
+          "visual_usability": {"status": "fail", "reason": "含短视频/社交平台界面、字幕、互动按钮和大段文字"},
+          "relevance": "person_only_wrong_event",
+          "selection_reason": "仅可作为人物身份参考，不得进入最终主图或备用图"
+        }
+      },
+      "missing_visual_reason": "现有唯一图片是旧活动短视频/社交UI截图，已按事件匹配和画面可用性门拒绝；有限来源内没有合格替代图。"
+    },
+    {
+      "story_id": "xiaomi-hyperos4-dual-phone",
+      "title_zh": "小米澎湃 OS 4 增加手机双持互联体验",
+      "editorial_order": 3,
+      "selection_source": "user_approved_script",
+      "heat_status": "not_supplied",
+      "heat_score": null,
+      "heat_rank": null,
+      "account_coverage": 0,
+      "heat_evidence": [],
+      "facts": [
+        {
+          "claim": "两台手机登录同一小米账号后可同步来电和验证码，且两台设备均需联网。",
+          "status": "confirmed",
+          "source_name": "小米澎湃OS",
+          "source_url": "https://hyperos.mi.com/",
+          "use": "官方功能边界"
+        },
+        {
+          "claim": "IT之家对应报道提供双手机来电和验证码功能演示图。",
+          "status": "confirmed",
+          "source_name": "IT之家",
+          "source_url": "https://www.ithome.com/0/994/944.htm",
+          "use": "视觉来源"
+        }
+      ],
+      "pending_verification": ["具体机型与功能适配情况以正式发布页面为准"],
+      "do_not_claim": ["不得把无需同一WiFi写成小米官方原句", "不得使用旧版HyperOS或无关硬件配图"],
+      "visual_intent": {
+        "subject": "小米澎湃OS 4手机双持",
+        "event": "跨设备同步来电和验证码",
+        "preferred": "双手机来电与验证码功能界面"
+      },
+      "visual_source_site": "IT之家",
+      "visual_manifest_path": "output/visual-anchor-domestic-smoke/2026-08-28/xiaomi-hyperos4-dual-phone/manifest.json",
+      "asset_reviews": {
+        "anchor-15aa0e606c55e6dd": {
+          "visual_kind": "feature_demo",
+          "subject_match": {"status": "pass", "reason": "画面明确标注Xiaomi HyperOS 4与两台小米手机"},
+          "event_match": {"status": "pass", "reason": "直接展示跨设备接听来电"},
+          "visual_usability": {"status": "pass", "reason": "清晰功能海报，无短视频或社交UI"},
+          "relevance": "exact_subject_event",
+          "selection_reason": "直接表现来电同步核心功能",
+          "composition_hint": "竖屏海报，保留双手机和功能标题",
+          "crop_hint": "保留底部条件脚注，不将非同网文字改写为事实",
+          "visual_qa": {"reviewed": true, "content": "两台小米手机跨设备接听来电功能图", "accuracy": "精准对应澎湃OS 4双持来电同步", "duplicate_or_wrong": "非旧版系统、非仅Logo", "watermark_text": "含功能标题、设备示意和条件脚注，无媒体水印", "clarity": "820×1093，清晰", "orientation": "竖屏海报，横版使用需谨慎裁切"}
+        },
+        "anchor-aaf0cc5cfd996391": {
+          "visual_kind": "feature_demo",
+          "subject_match": {"status": "pass", "reason": "画面明确标注Xiaomi HyperOS 4与两台小米手机"},
+          "event_match": {"status": "pass", "reason": "直接展示跨设备识别验证码"},
+          "visual_usability": {"status": "pass", "reason": "清晰功能海报，与来电界面内容不同"},
+          "relevance": "exact_subject_event",
+          "selection_reason": "直接表现验证码同步并提供不同功能备用",
+          "composition_hint": "竖屏海报，保留双手机和验证码界面",
+          "crop_hint": "保留底部条件脚注与主要验证码界面",
+          "visual_qa": {"reviewed": true, "content": "两台小米手机跨设备识别验证码功能图", "accuracy": "精准对应澎湃OS 4双持验证码同步", "duplicate_or_wrong": "与来电图为不同功能界面，不是近重复", "watermark_text": "含功能标题、设备示意和条件脚注，无媒体水印", "clarity": "820×1093，清晰", "orientation": "竖屏海报，横版使用需谨慎裁切"}
+        }
+      }
+    },
+    {
+      "story_id": "beijing-robot-events-2026",
+      "title_zh": "北京机器人大会和世界人形机器人运动会举行",
+      "editorial_order": 4,
+      "selection_source": "user_approved_script",
+      "heat_status": "not_supplied",
+      "heat_score": null,
+      "heat_rank": null,
+      "account_coverage": 0,
+      "heat_evidence": [],
+      "facts": [
+        {
+          "claim": "2026世界机器人大会在北京举行。",
+          "status": "confirmed",
+          "source_name": "北京市人民政府门户网站",
+          "source_url": "https://www.beijing.gov.cn/fuwu/lqfw/gggs/202608/t20260826_4838131.html",
+          "use": "大会事实与现场图片"
+        },
+        {
+          "claim": "第二届世界人形机器人运动会是与大会不同的活动。",
+          "status": "confirmed",
+          "source_name": "北京市体育局／首都之窗",
+          "source_url": "https://www.beijing.gov.cn/fwcj/calendar/tyss/6a7098af21f2a033ca99bc8c.html",
+          "use": "运动会事实与赛事图片"
+        },
+        {
+          "claim": "4万台和97%仅为北京市政府页面所引报告的表述。",
+          "status": "confirmed_with_attribution",
+          "source_name": "北京市人民政府门户网站",
+          "source_url": "https://www.beijing.gov.cn/fuwu/lqfw/gggs/202608/t20260826_4838131.html",
+          "use": "带归属的数据引用"
+        }
+      ],
+      "pending_verification": ["图片商业使用权仍需人工复核"],
+      "do_not_claim": ["不得把大会和运动会说成同一活动", "不得把4万台或97%去掉报告归属", "不得使用国外机器人赛事图"],
+      "visual_intent": {
+        "subject": "2026世界机器人大会与第二届世界人形机器人运动会",
+        "event": "北京两项机器人活动",
+        "preferred": "大会现场主图与运动会赛事备用图"
+      },
+      "visual_source_site": "北京市人民政府门户网站",
+      "visual_manifest_path": "output/visual-anchor-domestic-smoke/2026-08-28/beijing-robot-events-2026/manifest.json",
+      "asset_reviews": {
+        "anchor-ea5373887f68922f": {
+          "visual_kind": "event_photo",
+          "subject_match": {"status": "pass", "reason": "大会会标与机器人展馆清晰可见"},
+          "event_match": {"status": "pass", "reason": "直接表现2026世界机器人大会现场"},
+          "visual_usability": {"status": "pass", "reason": "清晰现场照片，无播放器或社交UI"},
+          "relevance": "exact_subject_event",
+          "selection_reason": "大会真实全景，按冻结顺序作为主图",
+          "composition_hint": "近横屏，保留大会横幅和现场人群",
+          "crop_hint": "保留2026世界机器人大会会标与主要展区",
+          "visual_qa": {"reviewed": true, "content": "2026世界机器人大会展馆真实全景，会标和现场观众清楚", "accuracy": "精准对应大会子场景", "duplicate_or_wrong": "非库存图、非国外赛事", "watermark_text": "无媒体水印；现场横幅属于事件内容", "clarity": "1080×804，清晰", "orientation": "近横屏，适合主图"}
+        },
+        "anchor-7ca579bdb9d227c7": {
+          "visual_kind": "event_photo",
+          "subject_match": {"status": "pass", "reason": "人形机器人足球队与赛场清晰可见"},
+          "event_match": {"status": "pass", "reason": "直接表现第二届世界人形机器人运动会赛事"},
+          "visual_usability": {"status": "pass", "reason": "清晰横版赛事照片，无播放器或社交UI"},
+          "relevance": "exact_subject_event",
+          "selection_reason": "覆盖与大会不同的运动会赛事子场景",
+          "composition_hint": "横屏，保留机器人球员、球门和赛场",
+          "crop_hint": "避免裁掉两侧机器人和场馆语境",
+          "visual_qa": {"reviewed": true, "content": "第二届世界人形机器人运动会人形机器人足球比赛现场", "accuracy": "精准对应运动会赛事子场景", "duplicate_or_wrong": "与大会主图不同事件子场景，非国外赛事", "watermark_text": "无明显媒体水印；号码和场馆标识属于现场内容", "clarity": "1312×790，清晰", "orientation": "横屏，适合赛事备用图"}
+        },
+        "anchor-f9eefdcb4add01d0": {
+          "visual_kind": "event_photo",
+          "subject_match": {"status": "pass", "reason": "大会展位、机器人与观众明确"},
+          "event_match": {"status": "pass", "reason": "直接表现大会观众互动子场景"},
+          "visual_usability": {"status": "pass", "reason": "清晰横版现场照片，无播放器或社交UI"},
+          "relevance": "exact_subject_event",
+          "selection_reason": "准确但受V1每故事两图上限约束",
+          "composition_hint": "横屏，突出观众与黄色机械臂互动",
+          "crop_hint": "保留观众、机械臂和展馆语境"
+        }
+      }
+    }
+  ]
+}

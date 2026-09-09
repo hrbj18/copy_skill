@@ -1,0 +1,86 @@
+{
+  "schema_version": "1.0",
+  "purpose": "2026-08-28 国内新闻视觉素材真实验收 batch 1/2；事实只来自列出的来源。",
+  "stories": [
+    {
+      "story_id": "wangzhe-wanxiangqi-launch",
+      "target_date": "2026-08-28",
+      "title_zh": "王者万象棋定档 2026 年 9 月 10 日上线",
+      "summary_zh": "App Store 产品页显示《王者万象棋》预计于 2026 年 9 月 10 日推出；该作是基于《王者荣耀》英雄的策略对战新游。",
+      "confirmation_status": "verified_multi_source",
+      "category": "game_release",
+      "visual_subject": "王者万象棋",
+      "subject_aliases": ["王者万象棋 App", "王者万象棋游戏", "万象棋"],
+      "query_terms": ["王者万象棋", "王者万象棋 实机", "王者万象棋 9月10日"],
+      "negative_terms": ["王者模拟战", "金铲铲之战", "腾讯 Logo", "placeholder", "AppIcon"],
+      "region": "CN",
+      "official_sources": [
+        {
+          "publisher": "Apple App Store",
+          "role": "正式产品页",
+          "url": "https://apps.apple.com/cn/app/%E7%8E%8B%E8%80%85%E4%B8%87%E8%B1%A1%E6%A3%8B/id1614798032"
+        },
+        {
+          "publisher": "IT之家",
+          "role": "国内科技媒体对应报道",
+          "url": "https://www.ithome.com/0/995/302.htm"
+        }
+      ]
+    },
+    {
+      "story_id": "tang-daosheng-ai-marathon",
+      "target_date": "2026-08-28",
+      "title_zh": "汤道生谈腾讯 AI 长跑与“头一公里”",
+      "summary_zh": "腾讯云文章记录汤道生关于腾讯 AI 起步节奏的讨论，并以马拉松和“头一公里”说明长期投入；文章说明内容由他和 AI 一起完成。",
+      "confirmation_status": "verified_multi_source",
+      "category": "ai_product",
+      "visual_subject": "汤道生 AI 长跑文章",
+      "subject_aliases": ["汤道生", "腾讯汤道生", "和AI一起长跑的这两年", "头一公里"],
+      "query_terms": ["汤道生 AI 长跑", "汤道生 头一公里", "腾讯汤道生"],
+      "negative_terms": ["cloud.png", "作者头像", "扫码关注", "腾讯 Logo", "混元 Logo", "二维码", "new.png"],
+      "region": "CN",
+      "official_sources": [
+        {
+          "publisher": "腾讯云开发者社区",
+          "role": "文章承载页",
+          "url": "https://developer.cloud.tencent.com/article/2732747",
+          "page_context_only_allowed": false
+        },
+        {
+          "publisher": "IT之家",
+          "role": "国内科技媒体对应报道",
+          "url": "https://www.ithome.com/0/994/409.htm",
+          "page_context_only_allowed": false
+        }
+      ]
+    },
+    {
+      "story_id": "xiaomi-hyperos4-dual-phone",
+      "target_date": "2026-08-28",
+      "title_zh": "小米澎湃 OS 4 增加手机双持互联体验",
+      "summary_zh": "小米澎湃 OS 4 的手机双持体验支持两台手机登录同一账号后同步来电和验证码，两台设备均需联网。",
+      "confirmation_status": "official_primary_source",
+      "category": "software",
+      "visual_subject": "小米澎湃 OS 4 手机双持互联",
+      "subject_aliases": ["小米澎湃OS 4", "Xiaomi HyperOS 4", "手机双持", "来电和验证码同步"],
+      "query_terms": ["小米澎湃 OS 4 手机双持", "HyperOS 4 双持", "来电验证码同步"],
+      "negative_terms": ["HyperOS 3", "旧版 HyperOS", "Xiaomi Logo", "小米 Logo", "无关硬件", "4_hyperos-0807"],
+      "region": "CN",
+      "official_sources": [
+        {
+          "publisher": "小米澎湃OS",
+          "role": "官方系统页面",
+          "url": "https://hyperos.mi.com/",
+          "page_context_only_allowed": false
+        },
+        {
+          "publisher": "IT之家",
+          "role": "固定核对的国内科技媒体功能图报道",
+          "url": "https://www.ithome.com/0/994/944.htm",
+          "page_context_only_allowed": false,
+          "max_images": 2
+        }
+      ]
+    }
+  ]
+}

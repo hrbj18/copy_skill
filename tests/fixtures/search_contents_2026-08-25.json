@@ -1,0 +1,23 @@
+{
+  "data": {
+    "aweme_list": [
+      {
+        "aweme_id": "7600000000000000001",
+        "desc": "AI硬件新品正式发布（搜索重复）",
+        "create_time": "2026-08-25T08:00:00+08:00",
+        "author": {"uid": "search-author", "nickname": "搜索作者"},
+        "statistics": {"digg_count": 12000, "comment_count": 300, "share_count": 120, "collect_count": 600},
+        "share_url": "https://www.douyin.com/video/7600000000000000001"
+      },
+      {
+        "aweme_id": "7600000000000000010",
+        "desc": "GitHub开源智能体项目突然走红",
+        "create_time": 1787623200000,
+        "author": {"uid": "search-author", "nickname": "开源观察"},
+        "statistics": {"digg_count": "3.5万", "comment_count": "900", "share_count": "1100", "collect_count": "5000"},
+        "share_url": "https://www.douyin.com/video/7600000000000000010?from=search"
+      }
+    ]
+  }
+}
+

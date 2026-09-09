@@ -1,0 +1,5 @@
+interface:
+  display_name: "抖音内容情报"
+  short_description: "采集、筛选并导出可供视频生产使用的抖音科技内容候选"
+  default_prompt: "Use $douyin-content-intelligence to prepare today's Douyin technology intelligence package."
+
