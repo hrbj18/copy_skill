@@ -1,28 +1,38 @@
 # Current status
 
-Updated: 2026-09-03.
+Updated: 2026-09-09.
 
 ## Current task
 
-- Current task: `docs/tasks/2026-09-03-public-web-discovery-lane.md`.
-- State: **implemented; code, full regression, diagnostics and real source-day acceptance passed for the new candidate lane**.
-- Boundary: only `D:\work\copy_skill`; no OpenMontage, scheduler, credential, paid-production or upstream-third-party changes.
+- Current task: `docs/tasks/2026-09-09-github-private-snapshot.md`.
+- State: **completed; private GitHub snapshot published and verified**.
+- Repository: `https://github.com/hrbj18/copy_skill`, visibility `PRIVATE`, default branch `main`.
+- Boundary: local credentials, Cookie files, browser profiles, models, runtime data, outputs and local integration history remain untracked.
 
-## Current V2.6 contract
+## Reliable current capabilities
 
-- Douyin remains the attention lane. Raw interactions, `heat_score`, `heat_rank`, delivery priority and `truth_status: not_checked` are not recalculated from public-web results.
-- A bounded 12-query public-web matrix supplements the 14 configured public sources. It discovers leads only; no search result, source count or model result is called factual verification or platform heat.
-- `全网选题候选池.md` / JSON provide a broad, independent 20-item OP selection pool. Every JSON candidate carries `discovery_audit`: query lead(s) or configured-source reference(s), plus `discovery_only_not_fact_verification`. `observed_heat_status` stays `unknown` unless raw Douyin evidence exists.
-- The candidate export rejects routine developer logs, customer cases, commentary/predictions and slogan-only lines; strips publisher tails; preserves weak leads as explicitly labelled leads; and merges rows only when two named anchors match, retaining all audit references.
-- `每日科技热点榜.md` remains strict: detail support, public-audience route and plain-language criteria still apply. Candidate expansion cannot pad it or lower its admission rules.
+- Collect configured Douyin accounts and keyword-search metadata through the project-owned MediaCrawler adapter.
+- Preserve raw interaction evidence, consolidate related videos and expose separate heat and delivery rankings.
+- Download a collected video's media URL for bounded OCR/ASR enrichment; direct share-link downloading is not yet a standalone workbench flow.
+- Build dated Markdown/JSON packages, material manifests and OpenMontage-facing snapshots.
+- Discover bounded public-web leads and find specific visual references for a user-selected news script.
+- Launch the Windows workbench with the Chinese `.bat`/`.cmd` entrypoints.
 
-## Latest real evidence
+## Product limitations
 
-- Final V2.6 source-day run: `run-20260902-eb9c942b1ec9`, target day 2026-09-02, 997.125 seconds. It collected 53 public-web leads and yielded exactly 20 selected candidate items after filtering/merging. All 20 have discovery audit; all retain `observed_heat_status: unknown`; no selected title matched developer-log/customer-case/slogan/media-tail checks.
-- The full package is honestly `partial`: public reader cards remain 3/20. The candidate-pool status is independently `success`, and no partial run replaced the prior success pointer.
-- `current.json` remains manifest-valid V2.4 success `run-20260902-1ea1b4cb7503`. Latest generated V2.6 candidate files are under `output\每日新闻素材\2026-09-02_每日素材\packs\run-20260902-eb9c942b1ec9\`.
-- Full pytest, compileall, doctor and current-package inspect passed. Doctor intentionally does not access Cookies; live account outcomes remain variable and are reported by each run.
+- Autonomous daily-news discovery is not a reliable finished product. The 2026-09-03 source-day package had 17 Douyin and 20 public-web candidates but zero strict public-reader cards.
+- That run spent about 29 minutes; six core Douyin searches failed, 24/24 article-detail fetches timed out, and all content/localization model batches failed. Fallback output therefore remained title-like.
+- Douyin remains attention evidence rather than factual evidence. Public-web results remain discovery leads unless the existing detail gates succeed.
+
+## Repository evidence
+
+- Initial snapshot commit: `04958e1`.
+- `third_party/MediaCrawler` is a submodule at `d6f7c5bb906b6dac40ddf343ef9e26438a3de092`, tracking `https://github.com/NanmiCoder/MediaCrawler.git`.
+- Pre-publish verification: 298 pytest cases passed, `compileall` passed, CLI doctor passed for the offline pipeline, and the staged secret-pattern scan returned no matches.
+- Doctor intentionally did not inspect authentication; live collection still depends on the local project browser login.
 
 ## Next direction
 
-- Improve first-party/allowlisted article-detail coverage so more public events qualify for the strict reader list. Do not reinterpret search leads as truth, relax reader-list detail gates, alter Douyin heat, or promote a partial package just to hide sparse-day limits.
+- Freeze expansion of the autonomous news-discovery pipeline until a small keep/stop experiment proves it can beat the current manual workflow on time and usable-news count.
+- Prioritize the demonstrated path: accept a selected news script, locate one or two accurate product/company visuals per story, download them into a dated folder, and generate a compact handoff manifest for OpenMontage.
+- A future implementation task should add this script-to-material workflow to the workbench without coupling it to the slow full daily-news run.

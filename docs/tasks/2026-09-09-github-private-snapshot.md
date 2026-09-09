@@ -1,7 +1,7 @@
 # 单次开发指导文档：GitHub 私有仓库首版快照
 
 日期：2026-09-09  
-状态：进行中  
+状态：已完成  
 工作目录：`D:\work\copy_skill`
 
 ## 目标
@@ -34,3 +34,12 @@
 6. 项目测试、编译检查和 handoff audit 通过，或明确记录与本次整理无关的既有失败。
 7. 首次提交推送完成，远端 HEAD 与本地 HEAD 一致，Git 工作树干净。
 
+## 实施结果
+
+- 已创建私有仓库 `https://github.com/hrbj18/copy_skill`，默认分支为 `main`。
+- 首次快照提交为 `04958e1`，包含 172 个项目文件及 MediaCrawler gitlink。
+- `.env.local`、Cookie、浏览器资料、`data/`、`output/`、模型、虚拟环境、测试缓存和本地过程记录均被 `.gitignore` 排除。
+- `third_party/MediaCrawler` 以子模块提交，固定在 `d6f7c5bb906b6dac40ddf343ef9e26438a3de092`。
+- 对暂存文件的密钥模式扫描无命中，且没有超过 5 MB 的普通暂存文件。
+- 298 项 pytest 通过，`compileall` 通过，CLI doctor 确认离线流程就绪；登录状态按设计未探测。
+- README 已如实记录稳定能力、真实运行的 `partial` 状态和下一阶段适用方向。

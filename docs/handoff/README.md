@@ -1,6 +1,6 @@
 # Project handoff router
 
-Current task: `docs/tasks/2026-09-03-public-web-discovery-lane.md`.
+Current task: `docs/tasks/2026-09-09-github-private-snapshot.md`.
 
 Read order for a new task:
 
