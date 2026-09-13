@@ -32,6 +32,7 @@ from .replication_validation import (
     validate_candidate,
     validation_enabled,
     validation_reason,
+    validation_settings_snapshot,
 )
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
@@ -1342,11 +1343,30 @@ def select_material_replicas(
     Every dropped candidate is recorded in ``unmet`` as a structured
     ``{"video_id", "stage", "reason"}`` entry so an empty/insufficient material
     set is fully attributable downstream.  ``stage`` is one of ``pool``,
-    ``author_duplicate``, ``invalid_media``, ``validation``, ``duration``,
-    ``face``, ``visual``, ``speech`` or ``quota``.
+    ``duration_pre``, ``author_duplicate``, ``invalid_media``, ``validation``,
+    ``duration``, ``face``, ``visual``, ``speech`` or ``quota``.
 
     ``validation_store`` collects the per-file download-validation records for
     the run-level ``validation.json``.
+
+    Two *different* duration windows guard this chain and they must never be
+    conflated:
+
+    * ``prefilter.min_seconds/max_seconds`` -- a **pre-download** window applied
+      to the whole replication run (``prefilter_candidates``), whose post-download
+      half is :func:`measured_duration_window_reject`;
+    * ``material_replica.min_seconds/max_seconds`` -- the **material clip** window,
+      historically applied *only after* the download, against the measured length.
+
+    ``measured_duration_window_reject`` is explicitly a no-op once the metadata
+    already carried a duration (the prefilter already judged it), and it measures
+    the *prefilter* window, not the material one.  So a candidate the prefilter
+    lets through (e.g. 202 s < 300 s) used to be **downloaded** and only then
+    refused by the material window (202 s > 180 s): the file landed on disk and
+    its bytes were burned for nothing.  The ``duration_pre`` gate below moves the
+    **material** window *ahead of the download* so such a candidate is dropped
+    without any traffic; candidates whose metadata carries no duration keep the
+    original "download, then judge by the measured length" behaviour unchanged.
     """
     from .replication_theme import project_path
 
@@ -1435,6 +1455,41 @@ def select_material_replicas(
                 "author": candidate.author,
             })
             continue
+        # --- Pre-download chain-level duration gate (material window) ---------
+        # The *material* window (``min_seconds``/``max_seconds`` below) used to be
+        # applied only after the download.  A candidate the (wider) prefilter let
+        # through was therefore fully downloaded and *then* refused by it -- pure
+        # wasted traffic (the 9.13 cold rerun burned one such 202 s file's full
+        # size).  Judge the same window here, *before* any download, so a
+        # candidate whose metadata already proves it is out of range is dropped
+        # without a single byte on the wire.
+        #
+        # Fires only when the metadata genuinely carries a duration
+        # (``duration_seconds > 0`` **and** a non-empty ``duration_source`` -- the
+        # honesty contract of ``replication_candidates``).  Without a metadata
+        # duration the candidate falls through *unchanged* to the original
+        # post-download measured check, so those rows behave exactly as before.
+        #
+        # A ``validation.duration_tolerance`` margin (default ±5 %) keeps a
+        # boundary candidate that could still pass on its *measured* length
+        # (e.g. 182 s against a 180 s ceiling) from being killed up front.
+        metadata_duration = float(getattr(candidate, "duration_seconds", 0.0) or 0.0)
+        duration_source = str(getattr(candidate, "duration_source", "") or "")
+        if metadata_duration > 0 and duration_source:
+            tolerance = float(validation_settings_snapshot(config)["duration_tolerance"])
+            below_window = min_seconds > 0 and metadata_duration < min_seconds * (1.0 - tolerance)
+            above_window = max_seconds > 0 and metadata_duration > max_seconds * (1.0 + tolerance)
+            if below_window or above_window:
+                unmet.append({
+                    "video_id": candidate.video_id,
+                    "stage": "duration_pre",
+                    "reason": (
+                        f"元数据时长 {metadata_duration:.0f}s 不在素材窗口 "
+                        f"{min_seconds:.0f}~{max_seconds:.0f}s（下载前判定，未消耗流量）"
+                    ),
+                    "duration_source": duration_source,
+                })
+                continue
         if budget is not None:
             allowed, budget_reason = budget.allow()
             if not allowed:

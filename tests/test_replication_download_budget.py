@@ -1079,16 +1079,23 @@ def test_p1c_duration_rejected_candidate_never_holds_a_budget_slot(tmp_path: Pat
 
     block = _budget_block_of(result)
     selected_ids = [item["video_id"] for item in block["selected"]]
-    # v01 clears ``validate_candidate`` (valid probe) but fails the measured-duration
-    # window; it must never hold a slot/byte -> absent from ``selected`` (P1c).
+    # v01 clears ``validate_candidate`` (valid probe) but fails the duration window;
+    # it must never hold a slot/byte -> absent from ``selected`` (P1c).
     assert "v01" not in selected_ids, selected_ids
     # The healthy neighbours are still selected: one length-mismatch drops one item,
     # never the run.
     assert "v00" in selected_ids and "v02" in selected_ids, selected_ids
-    # The rejection is attributed to the *duration* gate, not to the budget.
+    # The rejection is attributed to a *duration* gate, never to the budget.  v01's
+    # metadata already carries its 10 s, so since the material window moved ahead of
+    # the download the attribution is now the pre-download gate ("duration_pre")
+    # instead of the post-download one ("duration"); accept either -- the "duration"
+    # phase itself is still exercised by the tolerance-boundary test below.
     manifest = json.loads((Path(result["output_dir"]) / "清单.json").read_text(encoding="utf-8"))
     rejected = manifest["material_replica"]["rejected"]
-    assert any(e.get("video_id") == "v01" and e.get("stage") == "duration" for e in rejected), rejected
+    assert any(
+        e.get("video_id") == "v01" and e.get("stage") in {"duration", "duration_pre"}
+        for e in rejected
+    ), rejected
 
 
 # --------------------------------------------------------------------------- #
@@ -1221,3 +1228,124 @@ def test_p1d_remaining_budget_oversize_does_not_starve_later_smaller_item(tmp_pa
     # The scan ran to the end: it was never terminated by the byte ceiling.
     assert budget.stopped_by is None
     assert budget.bytes == 90  # 60 + 30 delivered; the skipped B contributed nothing
+
+
+# --------------------------------------------------------------------------- #
+# 17. Material-chain duration window moved *before* the download.
+#
+# ``measured_duration_window_reject`` (replication_selection.py) is the
+# post-download half of the *prefilter* window and is an explicit no-op once the
+# metadata carried a duration; the *material* window (15~180 s) used to be judged
+# only *after* the download.  A candidate the prefilter let through (10~300 s) was
+# therefore downloaded in full and only then refused by the material window -- the
+# 9.13 cold rerun burned one such 202 s file's entire size (23,446,900 B).
+#
+# The new ``duration_pre`` gate judges the material window from the metadata,
+# before any download, with a +/-``validation.duration_tolerance`` (default 5 %)
+# margin so a boundary candidate that could still pass on its *measured* length
+# (e.g. 182 s vs a 180 s ceiling) is not killed up front.  It fires only when the
+# metadata genuinely carries a duration (``duration_seconds > 0`` and a non-empty
+# ``duration_source``); otherwise the candidate keeps the old download-then-judge
+# path unchanged.
+# --------------------------------------------------------------------------- #
+def _candidate_with_duration(video_id: str, seconds: float, source: str):
+    from douyin_intelligence.replication_candidates import Candidate
+
+    return Candidate(
+        video_id=video_id, title=f"标题-{video_id}", author=f"作者-{video_id}",
+        duration_seconds=seconds, duration_source=source, heat_score=100.0,
+    )
+
+
+def _deps_recording_calls(tmp_path: Path, durations: dict[str, float], calls: list[str]):
+    """Deps whose downloader records every call and whose prober returns the *measured* length."""
+    def downloader(url, destination, config, *, max_bytes=None):
+        calls.append(Path(destination).stem)
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"x" * 60)
+
+    def prober(path, config):
+        return {"duration_seconds": durations[Path(path).stem], "width": 1080, "height": 1920, "codec": "h264"}
+
+    deps, _ = _deps(tmp_path, [], full=True)
+    deps.downloader = downloader
+    deps.prober = prober
+    return deps
+
+
+def test_material_duration_pre_gate_drops_metadata_oversize_without_downloading(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """(A) A 202 s candidate (> 180 s material ceiling) is refused *before* any download."""
+    from douyin_intelligence.replication_selection import select_material_replicas
+
+    monkeypatch.setattr("douyin_intelligence.replication_selection.compute_visual_metrics", _visual_ok)
+    calls: list[str] = []
+    deps = _deps_recording_calls(tmp_path, {"v202": 202.0}, calls)
+    budget = DownloadBudget(max_count=0, max_bytes=1_000_000, max_item_bytes=1_000_000)
+    config = _config(tmp_path, budget=None)
+
+    result = select_material_replicas(
+        config,
+        [_candidate_with_duration("v202", 202.0, "duration_ms")],
+        deps=deps, budget=budget, relevance={}, validation_store=[],
+    )
+
+    duration_pre = [entry for entry in result["unmet"] if entry.get("stage") == "duration_pre"]
+    assert calls == []                                      # never downloaded -> zero traffic
+    assert [entry["video_id"] for entry in duration_pre] == ["v202"]
+    assert duration_pre[0]["duration_source"] == "duration_ms"
+    assert "下载前判定" in duration_pre[0]["reason"]
+    assert budget.selected == []                            # holds no slot ...
+    assert budget.count == 0 and budget.bytes == 0          # ... and not a single byte
+    assert budget.transferred_bytes == 0                    # ... nor any real traffic
+
+
+def test_material_duration_pre_gate_falls_back_when_metadata_lacks_duration(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """(B) Metadata without a duration is untouched: still downloaded, judged after (as before)."""
+    from douyin_intelligence.replication_selection import select_material_replicas
+
+    monkeypatch.setattr("douyin_intelligence.replication_selection.compute_visual_metrics", _visual_ok)
+    calls: list[str] = []
+    # The prober reports the *measured* length (60 s, inside the material window);
+    # the candidate's metadata itself carries no duration.
+    deps = _deps_recording_calls(tmp_path, {"v000": 60.0}, calls)
+    budget = DownloadBudget(max_count=0, max_bytes=1_000_000, max_item_bytes=1_000_000)
+    config = _config(tmp_path, budget=None)
+
+    result = select_material_replicas(
+        config,
+        [_candidate_with_duration("v000", 0.0, "")],
+        deps=deps, budget=budget, relevance={}, validation_store=[],
+    )
+
+    assert calls == ["v000"]                                # behaviour unchanged: still downloaded
+    assert "duration_pre" not in [entry["stage"] for entry in result["unmet"]]
+    assert [entry["video_id"] for entry in budget.selected] == ["v000"]
+
+
+def test_material_duration_pre_gate_keeps_tolerance_boundary_candidate(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """(C) 182 s is inside 180 * (1 + 5 %) = 189 s, so it is *not* pre-rejected."""
+    from douyin_intelligence.replication_selection import select_material_replicas
+
+    monkeypatch.setattr("douyin_intelligence.replication_selection.compute_visual_metrics", _visual_ok)
+    calls: list[str] = []
+    deps = _deps_recording_calls(tmp_path, {"v182": 182.0}, calls)
+    budget = DownloadBudget(max_count=0, max_bytes=1_000_000, max_item_bytes=1_000_000)
+    config = _config(tmp_path, budget=None)
+
+    result = select_material_replicas(
+        config,
+        [_candidate_with_duration("v182", 182.0, "duration_ms")],
+        deps=deps, budget=budget, relevance={}, validation_store=[],
+    )
+
+    assert calls == ["v182"]                                # tolerated -> still downloaded
+    assert "duration_pre" not in [entry["stage"] for entry in result["unmet"]]
+    # The strict material window still refuses it later, on the *measured* length
+    # (> 180 s) -- that is the pre-existing post-download behaviour, untouched.
+    assert [entry["stage"] for entry in result["unmet"] if entry.get("video_id") == "v182"] == ["duration"]
