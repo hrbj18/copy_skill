@@ -304,8 +304,10 @@ def test_material_not_selected_is_attributable_in_manifest_and_run_log(tmp_path:
             # shared across stages since P1a.
             if "script" in str(cache_dir):
                 return {"status": "success", "text": "字" * 200, "segments": [{"start": 0, "end": 5, "text": "开场"}]}
-            # 300 chars over the 60s material clip => 5.0 chars/sec, above the ceiling.
-            return {"status": "success", "text": "字" * 300, "segments": []}
+            # A deliberately extreme 50 chars/sec (3000 chars over the 60s material
+            # clip) is rejected for any sane ``max_speech_rate``: this asserts the
+            # attribution mechanism, not the shipped ceiling.
+            return {"status": "success", "text": "字" * 3000, "segments": []}
 
     deps = _deps(tmp_path, rows)
     deps.transcriber = _VerboseTranscriber()

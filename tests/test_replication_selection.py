@@ -298,14 +298,18 @@ def test_select_material_replicas_reports_speech_rejection(tmp_path: Path, monke
         "douyin_intelligence.replication_selection.compute_visual_metrics",
         lambda *args, **kwargs: VisualMetrics(sampled_frames=10, motion_frame_ratio=0.8, ocr_text_frame_ratio=0.1, visual_ok=True),
     )
-    # 200 chars over 40s => 5.0 chars/sec, far above the 1.2 material ceiling.
-    deps = _material_deps(transcript={"status": "success", "text": "字" * 200, "segments": []})
+    # Verify the *mechanism* (message-density gate rejects + attributes to
+    # ``speech``), not a specific factory threshold.  The fake prober reports a
+    # 60s clip; 3000 chars over it => 50 chars/sec, rejected for any sane
+    # ``max_speech_rate``, so the test stays green when the shipped ceiling is
+    # retuned (e.g. 1.2 -> 8.0).
+    deps = _material_deps(transcript={"status": "success", "text": "字" * 3000, "segments": []})
     result = select_material_replicas(config, candidates, deps=deps)
     assert result["counters"]["rejected_speech"] == 1
     entry = next(item for item in result["unmet"] if item["stage"] == "speech")
     assert entry["video_id"] == "v1"
-    assert entry["chars"] == 200
-    assert entry["speech_rate"] >= 1.2
+    assert entry["chars"] == 3000
+    assert entry["speech_rate"] == 50.0
     assert "口播密度" in entry["reason"]
 
 
