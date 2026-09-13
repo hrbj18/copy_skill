@@ -266,7 +266,7 @@ def test_readme_selection_list_is_deduped_by_video_id() -> None:
     selected_rows = [line for line in text.splitlines() if line.startswith("- v")]
     assert len(selected_rows) == 2, selected_rows
     # The listed count equals the distinct count, not the raw row count.
-    assert "入选（2 条" in text
+    assert "下载预算入选（2 条" in text
     # The duplicate's stage tag is merged onto the single surviving row.
     assert "［脚本］［素材］" in text
     assert text.count("｜相关度") == 2
@@ -278,7 +278,7 @@ def test_readme_selection_dedupe_does_not_depend_on_budget_idempotence() -> None
     block["used"]["count"] = 3  # a legacy ledger that double-counted
     manifest = _manifest(download_budget=block)
     text = render_delivery_readme(manifest)
-    assert "入选（2 条" in text
+    assert "下载预算入选（2 条" in text
     assert len([line for line in text.splitlines() if line.startswith("- v1")]) == 1
 
 
@@ -400,7 +400,7 @@ def test_readme_states_source_retention_rule() -> None:
         "keep_source_video": True,
         "kept_count": 2,
         "selected_count": 4,
-        "note": "04-原片 仅收录入选素材源片（每个入选源 1 份）；未入选的下载原片保留在持久化媒体库，不进入交付目录",
+        "note": "04-原片 仅收录最终选用素材源片（每个最终选用源 1 份）；未选用的下载原片保留在持久化媒体库，不进入交付目录",
         "persistent_store": "data/media/material-replication",
     })
     text = render_delivery_readme(manifest)
@@ -408,7 +408,12 @@ def test_readme_states_source_retention_rule() -> None:
     assert "retention.keep_source_video：True" in text
     assert "04-原片 收录 2 份" in text
     assert "data/media/material-replication" in text
-    assert "仅收录入选素材源片" in text
+    assert "仅收录最终选用素材源片" in text
+    # A: the retention note must not reuse the ambiguous 「入选」 -- in this same
+    # document 「入选」 names the *download budget's* set (7), a different set from
+    # the *material sources* kept in 04-原片 (4).
+    note_line = next(line for line in text.splitlines() if line.startswith("- 说明："))
+    assert "入选" not in note_line, note_line
 
 
 def test_source_retention_section_absent_without_block() -> None:
@@ -434,3 +439,127 @@ def test_visual_proxy_section_absent_for_download_only() -> None:
     manifest = _manifest(material_replica={"status": "skipped", "rejected": []})
     text = render_delivery_readme(manifest)
     assert "## 画面代理判据" not in text
+
+
+# --------------------------------------------------------------------------- #
+# C: a multi-line source title must never break a Markdown list.
+# The 9.13 delivery had the title ``"…帮助到大家\n如果记不住…"`` -- its 30th
+# character is ``\n`` -- so ``title[:30] + "…"`` rendered a bare ``…`` line that
+# severed the list.  The real fix is to fold whitespace *before* truncating.
+# --------------------------------------------------------------------------- #
+_MULTILINE_TITLE = (
+    "小米澎程N70/N90验车教学 希望这个视频能够帮助到大家\n"
+    "如果记不住的话车友们可以关注点赞，收藏起来！\n"
+    "#小米 #验车"
+)
+# A short multi-line title never reaches the 30-char cut, so it isolates the
+# other half of the bug: even an untruncated title kept its raw newline.
+_SHORT_MULTILINE_TITLE = "第一行标题\n第二行标题"
+
+
+def _sel_row(video_id: str, title: str) -> dict:
+    return {
+        "video_id": video_id, "title": title, "author": "小***0",
+        "heat_score": 0.2, "relevance_score": 0.5, "size_bytes": 1024,
+        "stage": "material", "stages": ["material"],
+    }
+
+
+def test_multiline_title_never_breaks_any_list() -> None:
+    """All three title-bearing row renderers must emit a single clean line."""
+    manifest = _manifest(
+        mode="download_only",
+        download_budget={
+            "enabled": True,
+            "limits": {"max_count": 12, "max_bytes": 0, "max_item_bytes": 0},
+            "used": {"count": 3, "bytes": 0, "delivered_bytes": 0, "transferred_bytes": 0},
+            "ranking": {"order": ["relevance"], "note": ""},
+            "stopped_by": "count",
+            "selected": [
+                _sel_row("v0", _MULTILINE_TITLE),
+                _sel_row("v1", _MULTILINE_TITLE),
+                _sel_row("v2", _SHORT_MULTILINE_TITLE),
+            ],
+            "skipped": [],
+        },
+        downloads=[
+            {"video_id": f"d{i}", "author": "小***0", "title": _MULTILINE_TITLE,
+             "duration_seconds": 23.8, "size_bytes": 1024, "file": f"04-原片/d{i}.mp4"}
+            for i in range(2)
+        ],
+        prefilter={
+            "enabled": True,
+            "config": {"exclude_terms": [], "min_seconds": 30, "max_seconds": 300,
+                       "heat_gate_percentile": 10, "allow_unknown_duration": True,
+                       "drop_non_video": True},
+            "pool_size": 4, "passed": 0, "rejected": 2,
+            "rejections": [
+                {"video_id": f"r{i}", "stage": "pre_duration", "reason": "时长不符",
+                 "duration_seconds": 10, "heat_score": 0.1, "author": "小***0",
+                 "title": _MULTILINE_TITLE}
+                for i in range(2)
+            ],
+        },
+    )
+    text = render_delivery_readme(manifest)
+    lines = text.splitlines()
+    # 1) no orphan 「…」 line anywhere -- the exact 9.13 defect.
+    assert [line for line in lines if line.strip() == "…"] == []
+    # 2) no list is severed: exactly one row per selected / download / rejected row.
+    assert len([line for line in lines if line.startswith("- v")]) == 3
+    assert len([line for line in lines if line.startswith("- d")]) == 2
+    assert len([line for line in lines if line.startswith("- 剔除 r")]) == 2
+    # 3) the newline became a single space (folding, not just truncation).
+    assert "第一行标题 第二行标题" in text
+    assert "\n第一行标题" not in text
+    assert "\n如果记不住" not in text
+    assert "\n#小米" not in text
+
+
+# --------------------------------------------------------------------------- #
+# A / B / D: one clear name per quantity in the download-cost sections.
+# --------------------------------------------------------------------------- #
+def _budget_wording_block() -> dict:
+    row = {"video_id": "v1", "title": "标题A", "author": "作者A",
+           "heat_score": 1.0, "relevance_score": 0.3, "size_bytes": 100,
+           "stage": "material", "stages": ["material"]}
+    return {
+        "enabled": True,
+        "limits": {"max_count": 12, "max_bytes": 157286400, "max_item_bytes": 31457280},
+        "used": {"count": 2, "bytes": 300, "delivered_bytes": 300, "transferred_bytes": 500},
+        "ranking": {"order": ["relevance"], "note": ""},
+        "stopped_by": "count",
+        "selected": [row],
+        "skipped": [],
+    }
+
+
+def _budget_wording_validation() -> dict:
+    by_stage = {
+        "script": {"validated": 1, "passed": 1, "rejected": 0},
+        "material": {"validated": 8, "passed": 8, "rejected": 0},
+    }
+    return {
+        "enabled": True,
+        "config": {"duration_tolerance": 0.05, "full_decode": True,
+                   "decode_time_budget_seconds": 20, "require_metadata_duration": False,
+                   "cache_attestation": True},
+        "counts": {"validated": 9, "rejected": 0, "cache_attested": 0,
+                   "cache_attested_bad": 0, "duration_checked": 1,
+                   "by_conclusion": {"ok": 9}, "by_stage": by_stage},
+        "by_stage": by_stage,
+    }
+
+
+def test_download_and_validation_wording_is_unambiguous() -> None:
+    manifest = _manifest(download_budget=_budget_wording_block(),
+                         validation=_budget_wording_validation())
+    text = render_delivery_readme(manifest)
+    # A: the budget list names its own scope, so 1 (budget) vs N (sources kept)
+    # can no longer read as a self-contradiction.
+    assert "下载预算入选（1 条，为什么这几条值得下）：" in text
+    # B: the delivered ledger is named a *download* ledger, not a directory size.
+    assert "实际使用：2 条 / 交付 300 B（下载文件账）/ 真实传输 500 B" in text
+    # D: validated counts *calls* and breaks down so it reconciles with 分阶段.
+    assert "校验 9 次（脚本 1 + 素材 8）：全片解码通过 9 条" in text
+    assert "脚本 校验 1 次（通过 1 / 剔除 0）；素材 校验 8 次（通过 8 / 剔除 0）" in text

@@ -1140,7 +1140,7 @@ def run_material_replication(
         "kept_count": kept_sources,
         "selected_count": len(material_sources),
         "note": (
-            "04-原片 仅收录入选素材源片（每个入选源 1 份）；未入选的下载原片保留在持久化媒体库，不进入交付目录"
+            "04-原片 仅收录最终选用素材源片（每个最终选用源 1 份）；未选用的下载原片保留在持久化媒体库，不进入交付目录"
             if keep_source
             else "retention.keep_source_video=false：04-原片 不收录原片"
         ),

@@ -397,7 +397,8 @@ def test_bad_download_is_rejected_before_budget_and_replaced(tmp_path: Path) -> 
     assert len(artifact["records"]) == 6
     readme = (output_dir / "00-交付说明.md").read_text(encoding="utf-8")
     assert "## 下载校验" in readme
-    assert "校验 6 条：全片解码通过 4 条 / 降级抽帧通过 0 条 / 覆盖未测通过 0 条，剔除 2 条" in readme
+    assert "校验 6 次" in readme
+    assert "全片解码通过 4 条 / 降级抽帧通过 0 条 / 覆盖未测通过 0 条，剔除 2 条" in readme
     assert "undecodable 2" in readme
     # Every promised file actually exists.
     assert (output_dir / "05-过程数据" / "validation.json").is_file()

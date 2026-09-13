@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Callable
@@ -277,6 +278,29 @@ def human_size(num_bytes: int | float) -> str:
     return f"{int(size)} B" if index == 0 else f"{size:.1f} {units[index]}"
 
 
+#: Any run of whitespace (newline, carriage return, tab, one-or-more spaces).
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+def _clip_title(text: Any, limit: int = 30) -> str:
+    """One clean line for a source title: collapse whitespace, *then* truncate.
+
+    Source titles are free-form and routinely contain embedded newlines -- the
+    real 9.13 delivery had ``"…帮助到大家\\n如果记不住的话…"``.  Slicing such a
+    string at a fixed width can end the slice *on* the newline, so the rendered
+    row breaks in two and leaves a bare ``…`` line that severs the Markdown
+    list (evidence: ``00-交付说明.md`` had exactly such an orphan ``…`` line).
+    Folding every whitespace run (``\\n`` / ``\\r`` / ``\\t`` / spaces) into a
+    single space *before* truncating guarantees the result is one line, so a
+    list row can never be split.  Used by every readme row that shows a source
+    title: the download list, the prefilter rejections and the budget selection.
+    """
+    collapsed = _WHITESPACE_RE.sub(" ", str(text or "")).strip()
+    if len(collapsed) > limit:
+        collapsed = f"{collapsed[:limit]}…"
+    return collapsed
+
+
 def download_lines(manifest: dict[str, Any]) -> list[str]:
     """``## 下载清单`` (and ``## 下载失败``) section for a download-only delivery.
 
@@ -289,9 +313,7 @@ def download_lines(manifest: dict[str, Any]) -> list[str]:
         return []
     lines: list[str] = ["## 下载清单", ""]
     for item in downloads or []:
-        title = str(item.get("title") or "")
-        if len(title) > 30:
-            title = f"{title[:30]}…"
+        title = _clip_title(item.get("title"))
         lines.append(
             f"- {item.get('video_id')}｜{item.get('author')}｜{title}｜"
             f"{item.get('duration_seconds') or 0}s｜{human_size(item.get('size_bytes') or 0)}｜{item.get('file')}"
@@ -383,9 +405,7 @@ def prefilter_lines(manifest: dict[str, Any]) -> list[str]:
     if rejections:
         lines.append("")
         for item in rejections:
-            title = str(item.get("title") or "")
-            if len(title) > 30:
-                title = f"{title[:30]}…"
+            title = _clip_title(item.get("title"))
             lines.append(
                 f"- 剔除 {item.get('video_id')}｜{item.get('stage')}｜{item.get('reason')}"
                 f"｜时长 {item.get('duration_seconds')}s｜热度 {item.get('heat_score')}"
@@ -488,7 +508,7 @@ def download_budget_lines(manifest: dict[str, Any]) -> list[str]:
         f"总量 {human_size(max_bytes) if max_bytes else '不限'} / "
         f"单条 {human_size(max_item) if max_item else '不限'}",
         f"- 实际使用：{used.get('count', 0)} 条 / "
-        f"交付 {human_size(delivered)} / 真实传输 {human_size(transferred)}",
+        f"交付 {human_size(delivered)}（下载文件账）/ 真实传输 {human_size(transferred)}",
         f"- 停止原因：{_stop_reason_text(block.get('stopped_by'))}",
         f"- 排序依据：{' → '.join(ranking.get('order') or [])}",
     ]
@@ -497,11 +517,13 @@ def download_budget_lines(manifest: dict[str, Any]) -> list[str]:
     # One row per distinct video: the same source selected in two stages (脚本
     # then 素材) must not appear -- or be counted -- twice.
     selected = _dedupe_selected_rows(block.get("selected") or [])
-    lines.extend(["", f"入选（{len(selected)} 条，为什么这几条值得下）：", ""])
+    # Explicit scope word: this list is the *download budget's* selection, which
+    # is a different set from the *material* sources that make it into 04-原片.
+    # Calling both 「入选」 made 7 (budget) and 4 (kept sources) read as a
+    # contradiction in the same document.
+    lines.extend(["", f"下载预算入选（{len(selected)} 条，为什么这几条值得下）：", ""])
     for item in selected:
-        title = str(item.get("title") or "")
-        if len(title) > 30:
-            title = f"{title[:30]}…"
+        title = _clip_title(item.get("title"))
         lines.append(
             f"- {item.get('video_id')}{_stage_tag(item)}｜相关度 {item.get('relevance_score')}｜热度 {item.get('heat_score')}"
             f"｜{human_size(item.get('size_bytes') or 0)}｜{item.get('author')}｜{title}"
@@ -535,6 +557,21 @@ def validation_lines(manifest: dict[str, Any]) -> list[str]:
     config = block.get("config") or {}
     counts = block.get("counts") or {}
     by_conclusion = counts.get("by_conclusion") or {}
+    by_stage = block.get("by_stage") or counts.get("by_stage") or {}
+    stage_labels = {"script": "脚本", "material": "素材"}
+    # Deterministic order (script before material), then any unexpected stage.
+    stage_order = [name for name in ("script", "material") if name in by_stage]
+    stage_order += [name for name in by_stage if name not in stage_order]
+    validated = int(counts.get("validated", 0))
+    # ``validated`` counts *calls*, not files: a source validated in both the
+    # script and the material stage is counted twice (9 calls vs 8 delivered
+    # mp4 in the 9.13 run).  Say 「次」 and break it down so it reconciles with
+    # the per-stage line instead of reading as a file count.
+    stage_parts = [
+        f"{stage_labels.get(name, name)} {int((by_stage.get(name) or {}).get('validated', 0))}"
+        for name in stage_order
+    ]
+    stage_suffix = f"（{' + '.join(stage_parts)}）" if stage_parts else ""
     tolerance = float(config.get("duration_tolerance") or 0) * 100
     full_pass = int(by_conclusion.get("ok", 0))
     degraded_pass = int(by_conclusion.get("degraded", 0))
@@ -546,17 +583,15 @@ def validation_lines(manifest: dict[str, Any]) -> list[str]:
         f"解码时间预算 {config.get('decode_time_budget_seconds')}s（0 = 跳过全片解码、仅抽帧校验），"
         f"缺失时长需比对 {config.get('require_metadata_duration')}，"
         f"缓存旁证 {config.get('cache_attestation')}",
-        f"- 校验 {counts.get('validated', 0)} 条：全片解码通过 {full_pass} 条 / "
+        f"- 校验 {validated} 次{stage_suffix}：全片解码通过 {full_pass} 条 / "
         f"降级抽帧通过 {degraded_pass} 条 / 覆盖未测通过 {unknown_pass} 条，"
         f"剔除 {counts.get('rejected', 0)} 条",
         f"- 缓存旁证：命中 {counts.get('cache_attested', 0)} 条"
         f"（其中命中坏件旁证 {counts.get('cache_attested_bad', 0)} 条）",
     ]
-    by_stage = block.get("by_stage") or counts.get("by_stage") or {}
-    stage_labels = {"script": "脚本", "material": "素材"}
     if by_stage:
         parts = [
-            f"{stage_labels.get(name, name)} 校验 {value.get('validated', 0)} 条"
+            f"{stage_labels.get(name, name)} 校验 {value.get('validated', 0)} 次"
             f"（通过 {value.get('passed', 0)} / 剔除 {value.get('rejected', 0)}）"
             for name, value in by_stage.items()
         ]
@@ -612,7 +647,7 @@ def source_retention_lines(manifest: dict[str, Any]) -> list[str]:
         f"- retention.keep_source_video：{keep}",
         f"- 04-原片 收录 {block.get('kept_count', 0)} 份；"
         f"持久化媒体库：{block.get('persistent_store')}",
-        f"- 说明：{block.get('note') or '04-原片 仅收录入选源片'}",
+        f"- 说明：{block.get('note') or '04-原片 仅收录最终选用源片'}",
     ]
     return lines
 
