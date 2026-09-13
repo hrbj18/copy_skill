@@ -885,6 +885,9 @@ def run_material_replication(
         "heat_median": (material_result.get("stage") or {}).get("heat_median", 0.0),
         "face_checked": int((material_result.get("stage") or {}).get("face_checked", 0)),
         "selected": len(selected),
+        "delivered_bytes": int(material_result.get("delivered_bytes") or 0),
+        "min_delivered_bytes": int((material_result.get("stage") or {}).get("min_delivered_bytes") or 0),
+        "max_delivered_bytes": int((material_result.get("stage") or {}).get("max_delivered_bytes") or 0),
         "rejected": list(material_result.get("unmet") or []),
         "errors": list(material_result.get("errors") or []),
     }

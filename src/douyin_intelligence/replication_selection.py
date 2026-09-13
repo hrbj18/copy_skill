@@ -1327,6 +1327,34 @@ def _material_summary(
     return f"{headline}（候选池 {pool_size} 条，进入人脸检测 {face_checked} 条）：{details}"
 
 
+def _material_byte_floor_warning(
+    selected_count: int,
+    target: int,
+    delivered_bytes: int,
+    min_delivered_bytes: int,
+    unmet: list[dict[str, Any]],
+) -> str:
+    """Actionable one-line reason why the delivered source bytes fell short.
+
+    The delivered-bytes floor exists to keep a period's *material volume* inside
+    a band -- the "only 24.86 MiB across 4 sources" complaint is exactly a floor
+    miss.  A floor miss can happen while ``min_count`` is still satisfied (a few
+    short clips), so it needs its own wording rather than the count shortfall:
+    spell out the gap and the knob that closes it, then the per-candidate detail.
+    """
+    shortfall = max(0, min_delivered_bytes - delivered_bytes)
+    details = "；".join(
+        f"{entry.get('video_id') or '候选池'}：{entry.get('reason') or ''}".rstrip("：")
+        for entry in unmet
+    ) or "无候选进入素材筛选"
+    return (
+        f"交付源片体积 {delivered_bytes / 1048576:.1f} MiB 低于下限 "
+        f"{min_delivered_bytes / 1048576:.1f} MiB（缺口 {shortfall / 1048576:.1f} MiB，"
+        f"已选 {selected_count}/{target} 条）：可提高 material_replica.max_seconds 或补充候选，"
+        f"或下调 material_replica.min_delivered_bytes；候选落选明细：{details}"
+    )
+
+
 def select_material_replicas(
     config: dict[str, Any],
     candidates: list[Candidate],
@@ -1382,6 +1410,22 @@ def select_material_replicas(
     max_seconds = float(material.get("max_seconds") or 180)
     max_speech = float(material.get("max_speech_rate") or 1.2)
     max_per_author = int(material.get("max_per_author") or 1)
+    # --- Delivered-bytes quota (optional; absent keys == byte-identical run) ---
+    # ``min_delivered_bytes`` is a *floor* on the summed size of the selected
+    # source files: the loop keeps scanning past ``target`` until the sum reaches
+    # it, so a period that would otherwise ship a handful of tiny clips keeps
+    # looking for longer / more candidates instead of stopping at ``target``.
+    # ``0`` (the absent default) means "no floor" -- the loop then breaks purely
+    # on ``target``, exactly as before.  ``max_delivered_bytes`` is a *ceiling*:
+    # a candidate that would push the sum past it is skipped (never appended), so
+    # the delivered set can never overshoot; ``0`` means "no ceiling".
+    # ``max_selected_count`` is an optional hard cap on how many sources the
+    # floor scan may collect; ``0`` means "no extra cap".  The quota counts only
+    # the *selected source files* (``_safe_size`` of each ``video_path``), never
+    # the 8 s clip slices, and never touches ``DownloadBudget``.
+    min_delivered_bytes = int(material.get("min_delivered_bytes") or 0)
+    max_delivered_bytes = int(material.get("max_delivered_bytes") or 0)
+    max_selected_count = int(material.get("max_selected_count") or 0)
 
     pool, median = material_candidate_pool(candidates, config)
     if budget is not None:
@@ -1399,6 +1443,7 @@ def select_material_replicas(
     unmet: list[dict[str, Any]] = []
     author_counts: dict[str, int] = {}
     downloaded = 0
+    delivered_bytes = 0
     face_checked = 0
     face_errors = 0
     rejected_face_heavy = 0
@@ -1432,9 +1477,25 @@ def select_material_replicas(
     # found here as a cache hit instead of being downloaded a second time.
     video_root = media_root / REPLICATION_VIDEO_SUBDIR
     for index, candidate in enumerate(pool):
-        if len(selected) >= target:
+        # Stop only when *both* the target count and the byte floor are met, so a
+        # short/small pool keeps scanning for more volume.  With ``min_delivered_
+        # bytes`` absent (0) the floor test is trivially true and this reduces to
+        # the original "break once ``target`` is reached" -- byte-identical.
+        reached_target = len(selected) >= target
+        reached_floor = delivered_bytes >= min_delivered_bytes
+        reached_cap = max_selected_count > 0 and len(selected) >= max_selected_count
+        if reached_cap or (reached_target and reached_floor):
+            if reached_cap and not (reached_target and reached_floor):
+                reason = f"已达选择上限 {max_selected_count} 条，未评估"
+            elif min_delivered_bytes > 0:
+                reason = (
+                    f"已达目标 {target} 条且交付源片体积 {delivered_bytes} 字节 "
+                    f"≥ 下限 {min_delivered_bytes} 字节，未评估"
+                )
+            else:
+                reason = f"已达目标 {target} 条，未评估"
             for leftover in pool[index:]:
-                unmet.append({"video_id": leftover.video_id, "stage": "quota", "reason": f"已达目标 {target} 条，未评估"})
+                unmet.append({"video_id": leftover.video_id, "stage": "quota", "reason": reason})
             break
         usable, not_video_reason = is_video_candidate(candidate)
         if not usable:
@@ -1641,6 +1702,22 @@ def select_material_replicas(
                     "chars": chars,
                 })
                 continue
+            # Byte ceiling: a file that cleared every quality gate but would push
+            # the delivered sum past ``max_delivered_bytes`` is skipped (never
+            # appended), so the delivered set can never overshoot.  ``0`` = no
+            # ceiling -> this block is dead code, exactly as before.
+            delivered_size = _safe_size(video_path)
+            if max_delivered_bytes > 0 and delivered_bytes + delivered_size > max_delivered_bytes:
+                unmet.append({
+                    "video_id": candidate.video_id,
+                    "stage": "quota_bytes",
+                    "reason": (
+                        f"加入后交付源片体积 {delivered_bytes + delivered_size} 字节将超上限 "
+                        f"{max_delivered_bytes} 字节（本条 {delivered_size} 字节），跳过"
+                    ),
+                    "size_bytes": delivered_size,
+                })
+                continue
             selected.append({
                 "candidate": candidate,
                 "video_path": video_path,
@@ -1654,24 +1731,44 @@ def select_material_replicas(
                 ),
             })
             author_counts[candidate.author] = author_counts.get(candidate.author, 0) + 1
+            delivered_bytes += delivered_size
         except Exception as exc:
             errors.append({"video_id": candidate.video_id, "error": str(exc)[:300]})
 
-    insufficient = len(selected) < min_count
+    # The byte quota strengthens ``insufficient``: a run can satisfy ``min_count``
+    # yet still be a floor miss (the "24.86 MiB / 4 sources" complaint), which the
+    # count-only check would have called "success".  ``0`` floor -> never missed.
+    byte_floor_missed = min_delivered_bytes > 0 and delivered_bytes < min_delivered_bytes
+    insufficient = len(selected) < min_count or byte_floor_missed
+    if not insufficient:
+        conclusion = "success"
+    elif not selected:
+        conclusion = "empty"
+    elif byte_floor_missed and len(selected) >= min_count:
+        conclusion = "insufficient_bytes"
+    else:
+        conclusion = "insufficient"
     stage = {
         "candidate_pool": len(pool),
         "heat_median": round(float(median), 6),
         "face_checked": face_checked,
         "selected": len(selected),
+        "delivered_bytes": delivered_bytes,
+        "min_delivered_bytes": min_delivered_bytes,
+        "max_delivered_bytes": max_delivered_bytes,
         "rejected": len(unmet),
         "errors": len(errors),
-        "conclusion": "success" if not insufficient else ("empty" if not selected else "insufficient"),
+        "conclusion": conclusion,
     }
     if validation_on:
         stage["stage_validation_passed"] = validation_passed
         stage["stage_validation_rejected"] = validation_rejected
     if insufficient:
         warnings.append(_material_summary(len(pool), face_checked, len(selected), min_count, unmet))
+        if byte_floor_missed:
+            warnings.append(
+                _material_byte_floor_warning(len(selected), target, delivered_bytes, min_delivered_bytes, unmet)
+            )
     face_backend = str(getattr(face_runner, "backend", FACE_UNAVAILABLE))
     counters: dict[str, Any] = {
         "downloaded": downloaded,
@@ -1695,6 +1792,7 @@ def select_material_replicas(
         "status": "success" if not insufficient else "insufficient",
         "selected": selected,
         "insufficient": insufficient,
+        "delivered_bytes": delivered_bytes,
         "median_heat": median,
         "unmet": unmet,
         "stage": stage,

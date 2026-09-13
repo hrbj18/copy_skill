@@ -629,12 +629,30 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
     material_replica = material_replication.get("material_replica")
     if not isinstance(material_replica, dict):
         raise ConfigurationError("jobs.material_replication.material_replica 必须是对象")
-    if not 1 <= int(material_replica.get("min_count") or 0) <= int(material_replica.get("target_count") or 0) <= 4:
-        raise ConfigurationError("素材复刻素材数量必须满足 1 ≤ min_count ≤ target_count ≤ 4")
+    # The old cap of 4 encoded the pre-quota "at most 4 clips" rule.  The
+    # delivered-bytes quota makes ``target_count`` a *volume* trigger (shipped 8),
+    # and the loop may legitimately scan past it, so the cap is relaxed to a
+    # generous 20 (matching ``download_budget.max_count``).  0 is still rejected:
+    # a literal 0 is ambiguous and the runtime defaults it to 4.
+    if not 1 <= int(material_replica.get("min_count") or 0) <= int(material_replica.get("target_count") or 0) <= 20:
+        raise ConfigurationError("素材复刻素材数量必须满足 1 ≤ min_count ≤ target_count ≤ 20")
     if not 0 < float(material_replica.get("min_seconds") or 0) < float(material_replica.get("max_seconds") or 0):
         raise ConfigurationError("素材复刻素材时长区间无效")
     if int(material_replica.get("max_per_author") or 0) < 1:
         raise ConfigurationError("素材复刻同一作者上限必须大于 0")
+    # Delivered-bytes quota (optional, additive): absent keys stay a no-op, so a
+    # config without them loads exactly as before.  ``0`` is a legal sentinel
+    # ("unbounded"); only genuine negatives are rejected, and when a ceiling is
+    # actually set the floor may not sit above it.  Mirrors ``download_budget``.
+    quota_floor = int(material_replica.get("min_delivered_bytes") or 0)
+    quota_ceiling = int(material_replica.get("max_delivered_bytes") or 0)
+    quota_max_selected = int(material_replica.get("max_selected_count") or 0)
+    if quota_floor < 0 or quota_ceiling < 0 or quota_max_selected < 0:
+        raise ConfigurationError(
+            "素材复刻交付体积配额（min_delivered_bytes/max_delivered_bytes/max_selected_count）必须为非负整数"
+        )
+    if quota_ceiling > 0 and quota_floor > quota_ceiling:
+        raise ConfigurationError("素材复刻交付体积配额必须满足 min_delivered_bytes ≤ max_delivered_bytes")
     clips = material_replication.get("clips")
     if not isinstance(clips, dict) or not 0 < float(clips.get("min_seconds") or 0) < float(clips.get("max_seconds") or 0):
         raise ConfigurationError("素材复刻片段时长区间无效")

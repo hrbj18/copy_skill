@@ -724,6 +724,34 @@ def face_truncation_lines(manifest: dict[str, Any]) -> list[str]:
     return lines
 
 
+def _delivered_source_bytes_line(manifest: dict[str, Any]) -> list[str]:
+    """``- 交付源片体积：…`` line for the ``## 主素材`` section.
+
+    Reports the summed size of the *selected* material source files (the
+    ``material_replica.delivered_bytes`` the selection chain accumulated) plus
+    the configured floor/ceiling, so a reader can tell "shipped 24 MiB against a
+    70 MiB floor" at a glance.  Tolerant: a manifest without the field (older
+    run, or the byte quota unset at 0) renders nothing, exactly as before.
+    """
+    material = manifest.get("material_replica") or {}
+    delivered = material.get("delivered_bytes")
+    if not isinstance(delivered, (int, float)) or delivered <= 0:
+        return []
+    floor = material.get("min_delivered_bytes")
+    ceiling = material.get("max_delivered_bytes")
+    bounds: list[str] = []
+    if isinstance(floor, (int, float)) and floor > 0:
+        bounds.append(f"下限 {human_size(floor)}")
+    if isinstance(ceiling, (int, float)) and ceiling > 0:
+        bounds.append(f"上限 {human_size(ceiling)}")
+    bound_text = (
+        f"（{' / '.join(bounds)}，仅计入选源片；8s 切片另占交付目录）"
+        if bounds
+        else "（仅计入选源片；8s 切片另占交付目录）"
+    )
+    return [f"- 交付源片体积：{human_size(delivered)}{bound_text}", ""]
+
+
 def render_delivery_readme(manifest: dict[str, Any]) -> str:
     """Human-readable delivery summary (00-交付说明.md)."""
     lines = [

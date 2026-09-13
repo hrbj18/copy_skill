@@ -569,17 +569,20 @@
         "min_top": 5
       },
       "material_replica": {
-        "target_count": 4,
+        "target_count": 8,
         "min_count": 2,
         "min_seconds": 15,
-        "max_seconds": 180,
+        "max_seconds": 300,
         "max_speech_rate": 1.2,
         "_motion_threshold_comment": "旧键 motion_threshold=0.30 把「帧对占比」与「逐帧灰度变化量」两个量纲混用，使运动判据恒为假（死代码）；该键已废弃、不做语义映射。运动判据拆成两个独立阈值：motion_delta_threshold（单对帧变化量，0~1）与 min_motion_frame_ratio（变化帧对占比下限，0~1）。默认值在 9.12 语料 46 条真实抖音片上标定。",
         "motion_delta_threshold": 0.02,
         "min_motion_frame_ratio": 0.2,
         "max_ocr_coverage": 0.4,
         "max_per_author": 1,
-        "heat_gate_percentile": 0.0
+        "heat_gate_percentile": 0.0,
+        "_delivered_bytes_comment": "交付体积配额：min_delivered_bytes 是入选源片「文件字节和」的下限，未达时选材循环会越过 target_count 继续扫描更长/更多的候选（不再在 4 条就停）；max_delivered_bytes 是上限，加入后会超上限的候选直接跳过、不入选（0=不限）。两键缺省(=0)时行为与改动前逐字节相同。上限只约束「最终入选源片」，8s 切片段另占交付目录、不计入。",
+        "min_delivered_bytes": 73400320,
+        "max_delivered_bytes": 104857600
       },
       "prefilter": {
         "enabled": true,
@@ -597,9 +600,9 @@
       },
       "download_budget": {
         "enabled": true,
-        "max_count": 12,
-        "max_bytes": 157286400,
-        "max_item_bytes": 31457280
+        "max_count": 20,
+        "max_bytes": 262144000,
+        "max_item_bytes": 83886080
       },
       "validation": {
         "_comment": "decode_time_budget_seconds=0 表示不做全片解码、直接抽帧校验（如实记 degraded）；解码预算 <0 由 config 校验拒绝。时长窗口（prefilter.min_seconds/max_seconds）是一处配置、两处执行：元数据有时长 -> 下载前判；元数据无时长 -> 下载后按实测时长执行同一窗口。",

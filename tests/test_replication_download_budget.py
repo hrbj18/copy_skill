@@ -59,6 +59,19 @@ def _config(tmp_path: Path, *, budget: dict | None, prefilter_enabled: bool = Fa
     # bytes, so a real ffprobe+ffmpeg check is not applicable here (the layer
     # has its own dedicated test module).
     config["jobs"]["material_replication"]["validation"] = {"enabled": False}
+    # ... from the *delivered-bytes quota*: the shipped floor (70 MiB) would
+    # otherwise keep the material loop scanning past ``target`` and could consume
+    # more of the injected byte budget (e.g. the P1d remaining-budget guard, which
+    # pins ``budget.stopped_by is None``).  Zero here == pre-quota behaviour.
+    #
+    # ... and pin the *material duration window* to its pre-quota values: this
+    # module asserts the window mechanism (the duration_pre gate, the boundary
+    # tolerance), so it must not drift when the shipped window is retuned for the
+    # volume quota (15~180 s -> 15~300 s).  The material window has its own
+    # coverage in test_replication_duration_metadata.
+    material = config["jobs"]["material_replication"].setdefault("material_replica", {})
+    material["min_delivered_bytes"] = 0
+    material.update({"min_seconds": 15, "max_seconds": 180})
     if budget is None:
         config["jobs"]["material_replication"].pop("download_budget", None)
     else:
@@ -531,7 +544,7 @@ def test_shipped_config_budget_still_valid() -> None:
     """The factory config (enabled: true + all three caps) keeps loading and armed."""
     budget = DownloadBudget.from_config(load_config())
     assert budget is not None
-    assert (budget.max_count, budget.max_bytes, budget.max_item_bytes) == (12, 157286400, 31457280)
+    assert (budget.max_count, budget.max_bytes, budget.max_item_bytes) == (20, 262144000, 83886080)
 
 
 # --------------------------------------------------------------------------- #
