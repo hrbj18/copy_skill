@@ -5,6 +5,8 @@ import subprocess
 import types
 from pathlib import Path
 
+import pytest
+
 from douyin_intelligence.config import load_config
 from douyin_intelligence.replication_candidates import collect_candidate_pool
 from douyin_intelligence.scheduler import _run, task_xml
@@ -136,3 +138,55 @@ def test_collect_candidate_pool_forwards_publish_time_only_when_configured(tmp_p
     without_key["jobs"]["material_replication"]["search"].pop("publish_time_type", None)
     collect_candidate_pool(without_key, "苹果折叠屏", pool_size=40, run_id="r", deps=types.SimpleNamespace(collector=spy))
     assert seen[-1] == {}
+
+
+def _collect_config(tmp_path: Path) -> dict:
+    config = load_config()
+    config["media_crawler"]["runs_output"] = str(tmp_path / "runs")
+    config["media_crawler"]["root"] = str(tmp_path / "crawler")
+    (tmp_path / "crawler").mkdir()
+    return config
+
+
+def _run_collect_search(config: dict, run_id: str, *, publish_time_type, monkeypatch, seen: dict | None = None) -> dict:
+    class FakeSession:
+        def __init__(self, *_args, **_kwargs): pass
+        def prepare(self): return {"status": "reused", "port": 9223, "page_count": 1}
+        def finish(self, _status): return {"state": "completed_closed"}
+
+    monkeypatch.setattr("douyin_intelligence.search_collector.BrowserSession", FakeSession)
+
+    def fake_run(command, **_kwargs):
+        if seen is not None:
+            seen["command"] = command
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr("douyin_intelligence.search_collector.subprocess.run", fake_run)
+    return collect_search(config, 10, run_id, publish_time_type=publish_time_type)
+
+
+def test_collect_search_reports_default_publish_time_type(tmp_path: Path, monkeypatch) -> None:
+    # ``05-过程数据/search_report.json`` must record the *effective* window so a
+    # delivered run can be read back without forensic guessing; ``None`` keeps
+    # the historical one-day window (``1``).
+    config = _collect_config(tmp_path)
+    report = _run_collect_search(config, "default-window", publish_time_type=None, monkeypatch=monkeypatch)
+    assert report["publish_time_type"] == 1
+
+
+def test_collect_search_reports_explicit_publish_time_type(tmp_path: Path, monkeypatch) -> None:
+    config = _collect_config(tmp_path)
+    report = _run_collect_search(config, "unlimited-window", publish_time_type=0, monkeypatch=monkeypatch)
+    assert report["publish_time_type"] == 0
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, 7])
+def test_command_token_and_report_publish_time_type_agree(value, tmp_path: Path, monkeypatch) -> None:
+    # Guard against a one-sided future change: the token the crawler actually
+    # runs with and the int we log must be numerically equal for every window.
+    config = _collect_config(tmp_path)
+    seen: dict = {}
+    report = _run_collect_search(config, "agree", publish_time_type=value, monkeypatch=monkeypatch, seen=seen)
+    cli_token = seen["command"][seen["command"].index("--publish-time-type") + 1]
+    assert report["publish_time_type"] == (1 if value is None else int(value))
+    assert int(cli_token) == report["publish_time_type"]

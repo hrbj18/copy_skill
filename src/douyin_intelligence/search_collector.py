@@ -29,6 +29,20 @@ def controlled_keywords(config: dict[str, Any], limit: int = 10) -> list[str]:
     return result
 
 
+def _effective_publish_time_type(publish_time_type: int | None) -> int:
+    """The publish-time filter MediaCrawler actually runs with.
+
+    Single source of truth shared by ``search_command`` (the CLI token) and
+    ``collect_search`` (the value recorded in ``search_report.json``), so the
+    window the crawler runs with and the window we log can never diverge.
+    ``None`` (the historical default) resolves to ``1`` (one day); an int or a
+    numeric string resolves to its ``int`` value.
+    """
+    if publish_time_type is None:
+        return 1
+    return int(publish_time_type)
+
+
 def search_command(
     config: dict[str, Any],
     destination: Path,
@@ -52,7 +66,7 @@ def search_command(
     crawler = config["media_crawler"]
     per_keyword = max(10, math.ceil(total_budget / len(keywords)))
     runner = Path(__file__).with_name("mediacrawler_runner.py").resolve()
-    publish_value = "1" if publish_time_type is None else str(int(publish_time_type))
+    publish_value = str(_effective_publish_time_type(publish_time_type))
     return [
         str(resolve_path(crawler["python"])), str(runner), "--crawler-root", str(resolve_path(crawler["root"])),
         "--cdp-port", str(int(crawler["cdp_port"])), "--navigation-timeout", str(int(crawler.get("navigation_timeout_seconds") or 90)),
@@ -118,6 +132,7 @@ def collect_search(config: dict[str, Any], total_budget: int, run_id: str | None
             "status": final_status,
             "run_dir": str(run_dir.resolve()),
             "budget": budget,
+            "publish_time_type": _effective_publish_time_type(publish_time_type),
             "keywords": keywords,
             "per_keyword_budget": max(10, math.ceil(budget / len(keywords))),
             "raw_request_ceiling": max(10, math.ceil(budget / len(keywords))) * len(keywords),
