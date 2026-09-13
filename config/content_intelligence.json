@@ -597,7 +597,8 @@
         "exclude_terms": []
       },
       "search": {
-        "_comment": "min_searched_keywords（可选，默认不设置）：设置后把候选池规模抬升到 该值×10，使爬虫的 候选池规模//10 关键词切片覆盖足够多搜索词；受 max_pool_size 上限约束，无法满足时会告警。不设置时行为与既有完全一致。"
+        "_comment": "min_searched_keywords（可选，默认不设置）：设置后把候选池规模抬升到 该值×10，使爬虫的 候选池规模//10 关键词切片覆盖足够多搜索词；受 max_pool_size 上限约束，无法满足时会告警。不设置时行为与既有完全一致。 publish_time_type（可选，默认不设置=沿用上游 1）：MediaCrawler 的发布时长筛选，枚举 0=不限 / 1=一天 / 7=一周 / 180=半年（见 third_party/MediaCrawler/media_platform/douyin/field.py 的 PublishTimeType；注意 180 会被抖音搜索 API 拒绝、实测返回 0 条，勿用）。素材复刻须用 0（不限）：24 小时窗口会把候选池压到 20~50 条、其中约 80% 是图文帖，导致 70 MiB 交付体积下限达不到。2026-09-14 实测（同题材「大疆Pocket3」、同会话、间隔 5 分钟静默）：PT=1 → 7 条候选/5 条视频/2 条图文；PT=0 → 23 条候选/23 条视频/0 条图文（4.6 倍）。本键缺省（不设置）时行为与改动前完全一致；回滚只需删掉本键。",
+        "publish_time_type": 0
       },
       "download_budget": {
         "enabled": true,

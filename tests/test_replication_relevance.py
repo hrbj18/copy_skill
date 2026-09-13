@@ -90,7 +90,7 @@ def _config(tmp_path: Path, *, prefilter: dict | None = None, budget: dict | Non
 
 
 def _collector(rows: list[dict]):
-    def collect(config, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def collect(config, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         source = Path(str(config.get("_project_root"))) / "raw" / "search_contents_1.json"
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")
@@ -446,7 +446,7 @@ def test_min_searched_keywords_raises_the_pool_budget(tmp_path: Path) -> None:
     config["jobs"]["material_replication"]["search"] = {"min_searched_keywords": 9}
     seen: dict = {}
 
-    def collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         seen["budget"] = budget
         seen["searched"] = list(keywords)[: budget // 10]
         return {"status": "success", "keywords": list(keywords)[: budget // 10], "budget": budget}
@@ -468,7 +468,7 @@ def test_min_searched_keywords_is_capped_by_max_pool_and_warns(tmp_path: Path) -
     config["jobs"]["material_replication"]["max_pool_size"] = 60
     config["jobs"]["material_replication"]["search"] = {"min_searched_keywords": 9}
 
-    def collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         return {"status": "success", "keywords": list(keywords)[: budget // 10], "budget": budget}
 
     pool = collect_candidate_pool(
@@ -488,7 +488,7 @@ def test_min_searched_keywords_unset_leaves_the_budget_unchanged(tmp_path: Path)
     config["jobs"]["material_replication"]["search"] = {"_comment": "no min set"}
     seen: dict = {}
 
-    def collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         seen["budget"] = budget
         return {"status": "success", "keywords": keywords, "budget": budget}
 
@@ -507,7 +507,7 @@ def test_keyword_truncation_warning_surfaces_for_a_large_pool(tmp_path: Path) ->
     config["jobs"]["material_replication"]["max_pool_size"] = 120
     rows = [_row(f"v{i:02d}", f"作者{i}", url=f"https://signed.example/{i}") for i in range(3)]
 
-    def truncating_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def truncating_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         source = Path(str(cfg.get("_project_root"))) / "raw" / "search_contents_1.json"
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")

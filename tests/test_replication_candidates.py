@@ -107,7 +107,7 @@ def test_collect_candidate_pool_captures_media_url_before_sanitize(tmp_path: Pat
         encoding="utf-8",
     )
 
-    def fake_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def fake_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         assert before_sanitize is not None
         before_sanitize([source])
         return {"status": "success", "budget": budget, "keywords": keywords}
@@ -142,7 +142,7 @@ def test_collect_candidate_pool_separates_requested_from_searched_keywords(tmp_p
     requested = expand_keywords("苹果折叠屏", config)
     assert len(requested) > 4
 
-    def truncating_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def truncating_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         assert keywords == requested
         before_sanitize([source])
         return {
@@ -171,7 +171,7 @@ def test_collect_candidate_pool_failed_collection_claims_no_searched_keywords(tm
     config = load_config()
     config["_project_root"] = str(tmp_path)
 
-    def failing_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def failing_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         raise RuntimeError("browser down")
 
     pool = collect_candidate_pool(

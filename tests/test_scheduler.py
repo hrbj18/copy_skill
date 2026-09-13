@@ -1,11 +1,14 @@
 from __future__ import annotations
 
-from douyin_intelligence.config import load_config
-from douyin_intelligence.scheduler import _run, task_xml
+import copy
 import subprocess
-
-from douyin_intelligence.search_collector import collect_search, controlled_keywords, search_command
+import types
 from pathlib import Path
+
+from douyin_intelligence.config import load_config
+from douyin_intelligence.replication_candidates import collect_candidate_pool
+from douyin_intelligence.scheduler import _run, task_xml
+from douyin_intelligence.search_collector import collect_search, controlled_keywords, search_command
 
 
 def test_scheduler_xml_has_daily_safety_settings_and_no_secret() -> None:
@@ -88,3 +91,48 @@ def test_scheduler_timeout_degrades_to_a_non_success_result(monkeypatch) -> None
 
     assert result.returncode == 124
     assert "timed out" in result.stderr
+
+
+def test_search_command_publish_time_default_stays_one_day() -> None:
+    # Hard constraint: the default path must keep emitting the historical
+    # ``--publish-time-type 1`` (daily_news / inspiration / douyin_ranking /
+    # daily_hot_candidate_pool all share ``search_command``).
+    config = load_config()
+    keywords = controlled_keywords(config)
+    command = search_command(config, Path("example"), 100, keywords)
+    index = command.index("--publish-time-type")
+    assert command[index + 1] == "1"
+    # An explicit ``None`` is byte-identical to the no-argument default.
+    assert command == search_command(config, Path("example"), 100, keywords, publish_time_type=None)
+
+
+def test_search_command_publish_time_override_is_honored() -> None:
+    config = load_config()
+    keywords = controlled_keywords(config)
+    for value, expected in ((0, "0"), (7, "7")):
+        command = search_command(config, Path("example"), 100, keywords, publish_time_type=value)
+        index = command.index("--publish-time-type")
+        assert command[index + 1] == expected
+
+
+def test_collect_candidate_pool_forwards_publish_time_only_when_configured(tmp_path: Path) -> None:
+    # ``jobs.material_replication.search.publish_time_type`` reaches the
+    # collector only when the key is present; an absent key leaves the call --
+    # and every old-signature test double -- untouched.
+    seen: list[dict] = []
+
+    def spy(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
+        seen.append(kwargs)
+        return {"status": "success", "budget": budget, "keywords": list(keywords or [])}
+
+    with_key = copy.deepcopy(load_config())
+    with_key["_project_root"] = str(tmp_path)
+    with_key["jobs"]["material_replication"]["search"]["publish_time_type"] = 0
+    collect_candidate_pool(with_key, "苹果折叠屏", pool_size=40, run_id="r", deps=types.SimpleNamespace(collector=spy))
+    assert seen[-1] == {"publish_time_type": 0}
+
+    without_key = copy.deepcopy(load_config())
+    without_key["_project_root"] = str(tmp_path)
+    without_key["jobs"]["material_replication"]["search"].pop("publish_time_type", None)
+    collect_candidate_pool(without_key, "苹果折叠屏", pool_size=40, run_id="r", deps=types.SimpleNamespace(collector=spy))
+    assert seen[-1] == {}

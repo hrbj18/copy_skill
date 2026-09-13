@@ -72,7 +72,7 @@ def _config(tmp_path: Path, *, prefilter: dict | None = None) -> dict:
 
 
 def _collector(rows: list[dict]):
-    def collect(config, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def collect(config, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         source = Path(str(config.get("_project_root"))) / "raw" / "search_contents_1.json"
         source.parent.mkdir(parents=True, exist_ok=True)
         source.write_text(json.dumps(rows, ensure_ascii=False), encoding="utf-8")

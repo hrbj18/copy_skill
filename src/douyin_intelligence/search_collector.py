@@ -29,23 +29,41 @@ def controlled_keywords(config: dict[str, Any], limit: int = 10) -> list[str]:
     return result
 
 
-def search_command(config: dict[str, Any], destination: Path, total_budget: int, keywords: list[str]) -> list[str]:
+def search_command(
+    config: dict[str, Any],
+    destination: Path,
+    total_budget: int,
+    keywords: list[str],
+    *,
+    publish_time_type: int | None = None,
+) -> list[str]:
+    """Build the MediaCrawler search invocation.
+
+    ``publish_time_type`` is the upstream publish-time filter (MediaCrawler
+    ``PublishTimeType``: ``0`` = unlimited / ``1`` = one day / ``7`` = one week /
+    ``180`` = half a year).  ``None`` (the default) keeps the historical one-day
+    window (``"1"``) byte-identically, so ``daily_news`` / ``inspiration`` /
+    ``douyin_ranking`` / ``daily_hot_candidate_pool`` are unaffected; callers
+    that need the full history pass ``0`` explicitly (see
+    ``jobs.material_replication.search.publish_time_type``).
+    """
     if not keywords:
         raise ValueError("没有可用搜索词")
     crawler = config["media_crawler"]
     per_keyword = max(10, math.ceil(total_budget / len(keywords)))
     runner = Path(__file__).with_name("mediacrawler_runner.py").resolve()
+    publish_value = "1" if publish_time_type is None else str(int(publish_time_type))
     return [
         str(resolve_path(crawler["python"])), str(runner), "--crawler-root", str(resolve_path(crawler["root"])),
         "--cdp-port", str(int(crawler["cdp_port"])), "--navigation-timeout", str(int(crawler.get("navigation_timeout_seconds") or 90)),
-        "--publish-time-type", "1", "--", "--platform", "dy", "--type", "search", "--lt", "qrcode",
+        "--publish-time-type", publish_value, "--", "--platform", "dy", "--type", "search", "--lt", "qrcode",
         "--save_data_option", "jsonl", "--save_data_path", str(destination), "--crawler_max_notes_count", str(per_keyword),
         "--get_comment", "false", "--get_sub_comment", "false", "--max_concurrency_num", "1", "--headless", "false",
         "--keywords", ",".join(keywords),
     ]
 
 
-def collect_search(config: dict[str, Any], total_budget: int, run_id: str | None = None, *, keywords: list[str] | None = None, hard_max: int | None = None, keep_browser_on_failure: bool = False, before_sanitize: Callable[[list[Path]], None] | None = None) -> dict[str, Any]:
+def collect_search(config: dict[str, Any], total_budget: int, run_id: str | None = None, *, keywords: list[str] | None = None, hard_max: int | None = None, keep_browser_on_failure: bool = False, before_sanitize: Callable[[list[Path]], None] | None = None, publish_time_type: int | None = None) -> dict[str, Any]:
     hard_max = int(hard_max or config["jobs"]["inspiration"].get("hard_max_reference_videos") or 100)
     budget = min(max(1, int(total_budget)), hard_max)
     keywords = keywords or controlled_keywords(config)
@@ -59,7 +77,7 @@ def collect_search(config: dict[str, Any], total_budget: int, run_id: str | None
     destination.mkdir(parents=True, exist_ok=True)
     browser_session = BrowserSession(config, "collect_search")
     browser = browser_session.prepare()
-    command = search_command(config, destination, budget, keywords)
+    command = search_command(config, destination, budget, keywords, publish_time_type=publish_time_type)
     timeout_seconds = max(10, int(config["media_crawler"].get("collection_timeout_seconds") or 120))
     failure = None
     final_status = "failed"

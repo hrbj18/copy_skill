@@ -242,7 +242,7 @@ def _make_pipeline_env(tmp: Path, bad: set[str], monkeypatch):
     # monkeypatch restores the class attribute automatically after the test.
     monkeypatch.setattr(DownloadBudget, "select", traced_select)
 
-    def collector(config, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+    def collector(config, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
         source = Path(str(config["_project_root"])) / "raw" / "search_contents_1.json"
         source.parent.mkdir(parents=True, exist_ok=True)
         rows = [

@@ -334,6 +334,18 @@ def collect_candidate_pool(
                     f"受 max_pool_size（{max_pool}）限制：覆盖 {min_searched} 个搜索词需候选池规模 ≥ {needed}，"
                     f"当前候选池规模为 {budget}，实际最多搜索 {_planned_searched_keywords(budget)} 个词"
                 )
+    # ``jobs.material_replication.search.publish_time_type`` (optional, unset by
+    # default) overrides the MediaCrawler publish-time window.  Only a present,
+    # int-parseable value is forwarded; when the key is absent the collector is
+    # invoked exactly as before (no extra kwarg), so injected test doubles keep
+    # their historical signature and the default run stays byte-identical.
+    raw_publish_time = (settings.get("search") or {}).get("publish_time_type")
+    publish_time_type: int | None = None
+    if raw_publish_time is not None:
+        try:
+            publish_time_type = int(raw_publish_time)
+        except (TypeError, ValueError):
+            publish_time_type = None
     keywords = expand_keywords(theme, config)
     raw_rows: list[dict[str, Any]] = []
 
@@ -348,9 +360,13 @@ def collect_candidate_pool(
     if collector is None:
         from .search_collector import collect_search
         collector = collect_search
+    collector_kwargs: dict[str, Any] = {}
+    if publish_time_type is not None:
+        collector_kwargs["publish_time_type"] = publish_time_type
     try:
         report = collector(
             config, budget, run_id=run_id, keywords=keywords, hard_max=budget, before_sanitize=capture,
+            **collector_kwargs,
         )
     except Exception as exc:  # A failed collection only degrades this stage.
         # Nothing ran, so report an empty *searched* keyword set rather than
