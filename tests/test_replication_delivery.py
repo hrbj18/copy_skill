@@ -153,6 +153,38 @@ def test_readme_download_section_absent_without_key() -> None:
     assert "模式：仅采集与下载" not in text
 
 
+def test_readme_renders_delivered_source_bytes_line() -> None:
+    # The volume-quota ledger lives in the machine-readable 清单.json
+    # (material_replica.delivered_bytes / min / max); this line makes it legible
+    # in the human 00-交付说明.md ("shipped 24 MiB against a 70 MiB floor").
+    manifest = _manifest(
+        material_replica={
+            "delivered_bytes": 25165824,       # 24 MiB shipped
+            "min_delivered_bytes": 73400320,    # 70 MiB floor
+            "max_delivered_bytes": 104857600,   # 100 MiB ceiling
+        },
+    )
+    text = render_delivery_readme(manifest)
+    assert (
+        "- 交付源片体积：24.0 MB（下限 70.0 MB / 上限 100.0 MB，仅计入选源片；8s 切片另占交付目录）"
+        in text
+    )
+    # It belongs to the 主素材 block, ahead of 辅助素材.
+    assert text.index("## 主素材") < text.index("- 交付源片体积：") < text.index("## 辅助素材")
+
+
+@pytest.mark.parametrize(
+    "material",
+    [None, {}, {"delivered_bytes": 0}, {"delivered_bytes": 0, "min_delivered_bytes": 73400320}],
+)
+def test_readme_omits_delivered_source_bytes_line_when_absent_or_zero(material) -> None:
+    # Tolerant by design: an older manifest, or the byte quota unset at 0,
+    # renders exactly as before (no line).
+    overrides = {} if material is None else {"material_replica": material}
+    text = render_delivery_readme(_manifest(**overrides))
+    assert "交付源片体积" not in text
+
+
 def test_publish_directory_retries_on_transient_permission_error(tmp_path: Path, monkeypatch) -> None:
     stage = tmp_path / ".stage"
     ensure_delivery_tree(stage)

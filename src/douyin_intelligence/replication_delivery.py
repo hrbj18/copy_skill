@@ -797,6 +797,7 @@ def render_delivery_readme(manifest: dict[str, Any]) -> str:
     else:
         lines.append(f"- 状态：{script.get('status', 'unknown')}（未找到满足条件的脚本复刻视频）")
     lines.extend(["", "## 主素材", ""])
+    lines.extend(_delivered_source_bytes_line(manifest))
     for clip in manifest.get("main_materials") or []:
         lines.append(f"- {clip.get('file')}（{clip.get('duration')}s，{clip.get('face_class')}）→ {clip.get('suggested_use')}")
     if not manifest.get("main_materials"):
