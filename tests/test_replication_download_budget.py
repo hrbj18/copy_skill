@@ -1143,3 +1143,81 @@ def test_p1d_mid_queue_oversize_does_not_starve_later_items(tmp_path: Path) -> N
     assert [item["video_id"] for item in block["selected"]] == ["v00", "v02", "v04"]
     assert block["stopped_by"] == "queue_exhausted"
     assert [item["stage"] for item in block["skipped"]].count("budget_item") == 2
+
+
+# --------------------------------------------------------------------------- #
+# 16b. Defect P1d -- behavioural guard for the branch the two tests above miss.
+#
+# ``test_p1d_lone_oversize_is_skip_when_no_byte_ceiling`` and
+# ``test_p1d_mid_queue_oversize_does_not_starve_later_items`` both PASS on the
+# old implementation: with no byte ceiling, or with an item oversize *per item*,
+# the old ``note_oversize`` already returned ``"skip"``.  The actual defect was
+# narrower -- it lived in the ``cap == remaining_budget`` branch.  ``item_cap()``
+# is ``min(max_item_bytes, remaining_bytes())``, so whenever the *remaining run
+# budget* (not the per-item cap) was the binding constraint the old code fell
+# through to ``"stop"`` and the caller ``break``-ed, starving every smaller
+# candidate behind the oversize (the "only 2 materials" regression: rank 23/47
+# was such an oversize and cut off all remaining candidates).
+#
+# This test pins exactly that branch: ``max_item_bytes`` (1000) is deliberately
+# LARGER than ``max_bytes`` (100), so the per-item cap can never bind and the
+# mid-queue item can only be refused by the leftover run budget.
+# --------------------------------------------------------------------------- #
+def test_p1d_remaining_budget_oversize_does_not_starve_later_smaller_item(tmp_path: Path, monkeypatch) -> None:
+    """An oversize caused by the *remaining budget* must skip, never ``break`` (P1d).
+
+    Drives the *real* material candidate loop (``select_material_replicas``), so
+    the genuine ``allow`` -> ``item_cap`` -> download -> ``note_oversize`` ->
+    ``select`` sequence is exercised rather than an isolated ``note_oversize``
+    call.  The budget is injected directly because ``max_count=0`` (unlimited)
+    is not expressible through config validation.
+    """
+    from douyin_intelligence.replication_candidates import Candidate
+    from douyin_intelligence.replication_selection import select_material_replicas
+
+    monkeypatch.setattr("douyin_intelligence.replication_selection.compute_visual_metrics", _visual_ok)
+
+    # ``max_item_bytes`` (1000) >> ``max_bytes`` (100): a single item can fit the
+    # per-item cap yet still overflow the run ceiling, so any oversize here is
+    # necessarily a *remaining-budget* oversize -- the old code's blind spot.
+    budget = DownloadBudget(max_count=0, max_bytes=100, max_item_bytes=1000)
+    sizes = {"v00": 60, "v01": 50, "v02": 30}
+    # Three real videos with identical heat/relevance and a duration inside the
+    # material window, so *only* the byte budget can refuse any of them.  The
+    # deterministic order is relevance -> heat -> video_id == v00, v01, v02.
+    candidates = [
+        Candidate(
+            video_id=vid, title=f"标题-{vid}", author=f"作者{vid}",
+            duration_seconds=60.0, heat_score=100.0,
+        )
+        for vid in sizes
+    ]
+
+    def downloader(url, destination, config, *, max_bytes=None):
+        size = sizes[Path(destination).stem]
+        if max_bytes is not None and size > max_bytes:
+            # Declared / Content-Length oversize: refused before any body read.
+            raise MediaTooLargeError("视频声明体积超限", declared_bytes=size, limit=max_bytes)
+        Path(destination).parent.mkdir(parents=True, exist_ok=True)
+        Path(destination).write_bytes(b"x" * size)
+
+    deps, _ = _deps(tmp_path, [], full=True)
+    deps.downloader = downloader
+    deps.prober = lambda path, config: {"duration_seconds": 60.0, "width": 1080, "height": 1920, "codec": "h264"}
+
+    config = _config(tmp_path, budget=None)  # budget injected directly, not via config
+    select_material_replicas(config, candidates, deps=deps, budget=budget, relevance={}, validation_store=[])
+
+    # A (60 B) is delivered -> remaining 60 -> 40.  B (50 B) then exceeds the
+    # *remaining* 40 (= ``item_cap()`` after A, NOT ``max_item_bytes``) -> it must
+    # be a plain skip and the scan must keep going; C (30 B <= 40) is delivered.
+    # Pre-fix the B oversize ``break``-ed here, so C was never evaluated.
+    assert [entry["video_id"] for entry in budget.selected] == ["v00", "v02"]
+    assert "v01" in [entry["video_id"] for entry in budget.skipped]
+    assert any(
+        entry["video_id"] == "v01" and entry["stage"] == "budget_item"
+        for entry in budget.skipped
+    )
+    # The scan ran to the end: it was never terminated by the byte ceiling.
+    assert budget.stopped_by is None
+    assert budget.bytes == 90  # 60 + 30 delivered; the skipped B contributed nothing
