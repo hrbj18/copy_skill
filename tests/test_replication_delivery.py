@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -325,6 +326,70 @@ def test_validation_duration_pointer_uses_download_section_when_present() -> Non
     text = render_delivery_readme(manifest)
     assert "## 下载失败" in text
     assert "见「下载失败」" in text
+
+
+# --------------------------------------------------------------------------- #
+# V5: the dangling-pointer class must be closed *generally*, not case by case.
+# A ``见「X」`` cross-reference is only valid if ``## X`` is actually rendered;
+# these tests assert that invariant over every readme shape that can emit it.
+# --------------------------------------------------------------------------- #
+_POINTER_RE = re.compile(r"见「([^」]+)」")
+
+
+def _missing_pointer_targets(readme: str) -> list[str]:
+    """Names referenced by ``见「X」`` that have no matching ``## X`` heading."""
+    headings = {line[3:].strip() for line in readme.splitlines() if line.startswith("## ")}
+    return [name for name in _POINTER_RE.findall(readme) if name not in headings]
+
+
+def test_readme_cross_references_never_dangle() -> None:
+    """Universal invariant: every ``见「X」`` resolves to a rendered ``## X``.
+
+    Covers every readme shape whose section set differs, so a future section that
+    becomes conditional cannot silently leave a pointer behind.
+    """
+    download = {"video_id": "7301", "author": "作者A", "title": "t",
+                "duration_seconds": 60.0, "size_bytes": 1536, "file": "04-原片/a.mp4"}
+    failure = {"video_id": "7302", "stage": "duration_post", "reason": "时长不符"}
+    pointer_validation = _validation_block(duration_checked=0)  # forces the pointer branch
+    variants = {
+        "full_chain": _manifest(validation=pointer_validation),
+        "download_only_no_downloads": _manifest(mode="download_only", validation=pointer_validation),
+        "download_only_no_failures": _manifest(
+            mode="download_only", validation=pointer_validation, downloads=[download],
+        ),
+        "download_only_with_failures": _manifest(
+            mode="download_only", validation=pointer_validation,
+            downloads=[download], download_failures=[failure],
+        ),
+        "download_only_failures_only": _manifest(
+            mode="download_only", validation=pointer_validation, download_failures=[failure],
+        ),
+    }
+    for name, manifest in variants.items():
+        readme = render_delivery_readme(manifest)
+        dangling = _missing_pointer_targets(readme)
+        assert dangling == [], f"{name}: 悬空指针 {dangling}"
+
+
+def test_download_only_without_failures_does_not_point_at_absent_section() -> None:
+    """V5 regression: successes but *no* failures -> 「下载失败」 is not rendered.
+
+    The pointer used to fire on ``downloads OR download_failures`` while the
+    section renders only for failures, so this exact shape dangled.
+    """
+    manifest = _manifest(
+        mode="download_only",
+        validation=_validation_block(duration_checked=0),
+        downloads=[{"video_id": "7301", "author": "作者A", "title": "t",
+                    "duration_seconds": 60.0, "size_bytes": 1536, "file": "04-原片/a.mp4"}],
+    )
+    text = render_delivery_readme(manifest)
+    assert "## 下载清单" in text
+    assert "## 下载失败" not in text       # no failures -> no such section
+    assert "见「下载失败」" not in text      # ... therefore no such pointer
+    assert "05-过程数据/validation.json" in text  # points at a real artifact instead
+    assert _missing_pointer_targets(text) == []
 
 
 # --------------------------------------------------------------------------- #

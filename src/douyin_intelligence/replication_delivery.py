@@ -566,11 +566,16 @@ def validation_lines(manifest: dict[str, Any]) -> list[str]:
         lines.append(f"- 结论分布：{breakdown}")
     if not counts.get("duration_checked"):
         # Where the post-download duration window's outcome lives depends on the
-        # run: a download-only delivery renders the per-file detail under
-        # 「下载失败」 (``download_lines``); a full-chain run has no such section,
-        # so point at the always-written per-file artifact instead.  Either way
-        # the cross-reference must be fulfillable.
-        if manifest.get("downloads") or manifest.get("download_failures"):
+        # run.  The per-file detail lives under 「下载失败」, but ``download_lines``
+        # renders that section *only* when ``download_failures`` is non-empty -- so
+        # this pointer must key off the *same* condition, not ``downloads or
+        # download_failures``.  Otherwise a download-only run with successes but no
+        # failures emits a cross-reference to a section that does not exist (a
+        # dangling pointer; regression-tested by
+        # ``test_download_only_without_failures_does_not_point_at_absent_section``).
+        # With no failures section there is nothing per-file to point at, so state
+        # the count inline and point at the always-written validation artifact.
+        if manifest.get("download_failures"):
             window_pointer = "下载后按实测时长执行的时长窗口结果见「下载失败」"
         else:
             window_rejected = int(
