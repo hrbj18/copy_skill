@@ -363,6 +363,7 @@ def collect_candidate_pool(
     collector_kwargs: dict[str, Any] = {}
     if publish_time_type is not None:
         collector_kwargs["publish_time_type"] = publish_time_type
+    collector_error: Exception | None = None
     try:
         report = collector(
             config, budget, run_id=run_id, keywords=keywords, hard_max=budget, before_sanitize=capture,
@@ -370,7 +371,12 @@ def collect_candidate_pool(
         )
     except Exception as exc:  # A failed collection only degrades this stage.
         # Nothing ran, so report an empty *searched* keyword set rather than
-        # echoing the requested list back as if it had produced results.
+        # echoing the requested list back as if it had produced results.  Keep
+        # the exception itself: the pipeline never aborts on a failed pool (see
+        # ``run_material_replication``, which reads ``pool["candidates"]`` and
+        # carries on with the empty list), so the user-visible warning built
+        # below is the *only* place the cause can surface.
+        collector_error = exc
         report = {"status": "failed", "error": str(exc)[:300], "keywords": [], "budget": budget}
 
     requested = list(keywords)
@@ -382,8 +388,19 @@ def collect_candidate_pool(
     shortfall = len(candidates) < min_pool
     if shortfall:
         warnings.append(_pool_shortfall_warning(len(candidates), min_pool, len(requested), len(searched), report))
-    if collection_failed:
-        warnings.append("候选池采集未成功，仅使用已捕获的记录")
+    if collector_error is not None:
+        # The collector itself blew up before returning a report (signature
+        # mismatch, browser unavailable, ...).  Name the exception class and
+        # message: an empty pool that is otherwise only reported as "too small"
+        # must stay diagnosable, since the pipeline keeps running regardless.
+        warnings.append(
+            f"候选池采集未成功：{type(collector_error).__name__}: {str(collector_error)[:200]}（仅使用已捕获的记录）"
+        )
+    elif collection_failed:
+        # The collector returned but reported a failed crawl (process error /
+        # timeout); that report normally carries the reason in ``error``.
+        detail = str(report.get("error") or "采集进程返回 status=failed，未提供 error 字段").strip()[:200]
+        warnings.append(f"候选池采集未成功：采集进程失败：{detail}（仅使用已捕获的记录）")
     elif len(requested) > len(searched) and not shortfall:
         # The shortfall warning already states the truncation when the pool is
         # undersized; this surfaces it for a pool that cleared ``min_pool`` too.

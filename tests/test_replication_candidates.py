@@ -181,9 +181,53 @@ def test_collect_candidate_pool_failed_collection_claims_no_searched_keywords(tm
     assert pool["keywords_used"] == []
     assert pool["keywords_requested"] == expand_keywords("苹果折叠屏", config)
     assert pool["keywords_truncated"] is True
-    assert any("候选池采集未成功，仅使用已捕获的记录" in item for item in pool["warnings"])
+    # An exception path must name the exception, not silently degrade.
+    collection_warning = next(item for item in pool["warnings"] if "候选池采集未成功：" in item)
+    assert "RuntimeError: browser down" in collection_warning
+    assert collection_warning.endswith("（仅使用已捕获的记录）")
     shortfall = next(item for item in pool["warnings"] if "低于最小目标" in item)
     assert "候选池采集未成功，未取得有效关键词覆盖" in shortfall
+
+
+def test_collect_candidate_pool_names_a_signature_mismatch_exception(tmp_path: Path) -> None:
+    # Minimal repro of the silent-degradation symptom: a collector that does not
+    # accept the optional kwarg, with the shipped key present, otherwise degrades
+    # to an unexplained empty pool.  The warning must name the exception.
+    config = load_config()
+    config["_project_root"] = str(tmp_path)
+    config["jobs"]["material_replication"]["search"]["publish_time_type"] = 0
+
+    def legacy_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None):
+        return {"status": "success", "budget": budget, "keywords": keywords}
+
+    pool = collect_candidate_pool(
+        config, "苹果折叠屏", pool_size=40, run_id="run-legacy",
+        deps=types.SimpleNamespace(collector=legacy_collector),
+    )
+    warning = next(item for item in pool["warnings"] if "候选池采集未成功：" in item)
+    assert "TypeError" in warning
+    assert "publish_time_type" in warning
+    assert warning.endswith("（仅使用已捕获的记录）")
+
+
+def test_collect_candidate_pool_surfaces_the_report_error_when_the_crawl_fails(tmp_path: Path) -> None:
+    # A collector that *returns* a failed report (process error / timeout) is a
+    # different cause from one that raises; the warning must carry the report's
+    # own ``error`` so the two stay distinguishable.
+    config = load_config()
+    config["_project_root"] = str(tmp_path)
+
+    def failed_report_collector(cfg, budget, *, run_id=None, keywords=None, hard_max=None, before_sanitize=None, **kwargs):
+        return {"status": "failed", "error": "crawler timed out after 17 seconds", "keywords": [], "budget": budget}
+
+    pool = collect_candidate_pool(
+        config, "苹果折叠屏", pool_size=40, run_id="run-report-fail",
+        deps=types.SimpleNamespace(collector=failed_report_collector),
+    )
+    warning = next(item for item in pool["warnings"] if "候选池采集未成功：" in item)
+    assert "采集进程失败" in warning
+    assert "crawler timed out after 17 seconds" in warning
+    assert warning.endswith("（仅使用已捕获的记录）")
 
 
 def test_looks_like_audio_url_detects_image_album_music() -> None:
