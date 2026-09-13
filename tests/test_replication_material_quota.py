@@ -299,3 +299,33 @@ def test_ceiling_only_run_never_overshoots(tmp_path: Path, monkeypatch) -> None:
     assert result["delivered_bytes"] <= 3500
     assert len(_selected_ids(result)) == 3
     assert _unmet_stages(result).count("quota_bytes") == 2
+
+
+# --------------------------------------------------------------------------- #
+# 9. Factory-config guard: the shipped quota / window / clips values
+#
+# The behaviour tests above pin *mechanisms* to a throwaway config; this one
+# guards the *shipped numbers* so an accidental edit (e.g. reverting
+# ``max_seconds`` to 180, tightening ``clips.max_total`` back to 12, or mistyping
+# a byte bound) fails loudly.  It reads the real ``config/content_intelligence.json``
+# through ``load_config()`` (never a test double).  The ``download_budget`` triple
+# is already pinned by ``test_shipped_config_budget_still_valid`` in
+# test_replication_download_budget, so it is deliberately NOT re-asserted here.
+# --------------------------------------------------------------------------- #
+def test_shipped_config_quota_and_window_factory_values() -> None:
+    settings = load_config()["jobs"]["material_replication"]
+    material = settings["material_replica"]
+    clips = settings["clips"]
+
+    # 8 sources per period (was 4): the volume quota's count trigger.
+    assert material["target_count"] == 8
+    # 300 s material window (was 180): the two long 9.13 clips (202 s / 182 s)
+    # must survive the pre-download gate so their bytes can be delivered.
+    assert material["max_seconds"] == 300
+    # Delivered-source-bytes band: floor 70 MiB, ceiling 100 MiB.
+    assert material["min_delivered_bytes"] == 73400320
+    assert material["max_delivered_bytes"] == 104857600
+    # 8 sources x max_per_video(2) = 16 <= max_total, so no source is starved of
+    # its clip; 24 keeps headroom above the pre-quota 12.
+    assert clips["max_total"] == 24
+

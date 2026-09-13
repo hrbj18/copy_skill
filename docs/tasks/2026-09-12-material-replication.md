@@ -353,13 +353,15 @@ heat_score     = round(raw_engagement / max(1, pool_max_engagement), 6)   # 池�
 | `theme_max_chars` / `max_path_chars` | 12 / 260 | 目录命名约束 |
 | `budget.*` | 见 PRD §5.1（collection 480/720、download 480、asr 180/300、face 360/600、clip 180/360、total 1800/2700 秒） | 分阶段墙钟预算 |
 | `script_replica.*` | target 1 / min_chars 150 / min_cps 1.2 / 30~300s / top 10% / min_top 5 | P0-3 |
-| `material_replica.*` | target 4 / min 2 / 15~180s / max_speech_rate 1.2 / motion_threshold 0.30 / max_ocr_coverage 0.40 / max_per_author 1 | P0-5 |
-| `clips.*` | min 3 / max 8 秒 / 每视频 ≤2 / 总 ≤12 | P0-7 |
+| `material_replica.*` | target 8 / min 2 / 15~300s / max_speech_rate 1.2 / motion_threshold 0.30 / max_ocr_coverage 0.40 / max_per_author 1 / min_delivered_bytes 73400320 / max_delivered_bytes 104857600 | P0-5 |
+| `clips.*` | min 3 / max 8 秒 / 每视频 ≤2 / 总 ≤24 | P0-7 |
 | `retention.keep_source_video` | true | 04-原片保留 |
 | `download.*` | 复用 `materials` 的 timeout 180 / retries 3 / max_video_bytes | 下载 |
 | `face.*` | backend_priority `["opencv_yunet","opencv_dnn"]` / interval 1 / max_frames 120 / width 960 / min_area 0.015 / 5% / 15% / model_root `data/models/face` / auto_download true / score_threshold 0.9 / yunet{file,url,expected_bytes} | P0-6 |
 
-`config.py` 校验：`material_replication` 必须是对象；`min_pool_size ≤ default_pool_size ≤ max_pool_size`；`3 ≤ min_keywords ≤ max_keywords ≤ 10`；各 `budget.*_hard ≥ *_seconds`；`material_replica.min_count ≤ target_count ≤ 4`；`clips.min_seconds < max_seconds`；`face.free_max_ratio ≤ face.low_max_ratio`；`face.backend_priority ⊆ {opencv_yunet, opencv_dnn}`；`output_root/temp_root/cache_root/media_root/model_root` 必须是项目内相对路径。
+`config.py` 校验：`material_replication` 必须是对象；`min_pool_size ≤ default_pool_size ≤ max_pool_size`；`3 ≤ min_keywords ≤ max_keywords ≤ 10`；各 `budget.*_hard ≥ *_seconds`；`material_replica.min_count ≤ target_count ≤ 20`；`clips.min_seconds < max_seconds`；`face.free_max_ratio ≤ face.low_max_ratio`；`face.backend_priority ⊆ {opencv_yunet, opencv_dnn}`；`output_root/temp_root/cache_root/media_root/model_root` 必须是项目内相对路径；交付体积配额 `min_delivered_bytes ≤ max_delivered_bytes`（`max_delivered_bytes == 0` 视为不限）。
+
+**交付体积配额（`material_replica.min_delivered_bytes` / `max_delivered_bytes`）**：`target_count` 的语义已由「**上限**（选够 N 条即停）」变为「**下限条数触发**」——选材循环只有在「已选条数 ≥ `target_count` **且** 入选源片字节和 ≥ `min_delivered_bytes`」时才停止；`max_delivered_bytes` 为上限，加入后会超上限的候选直接跳过、不入选（`0` 视为不限）。两键缺省（=0）时行为与引入前逐字节相同。因此 `target_count` 4→8、`max_seconds` 180→300、`clips.max_total` 12→24 三者是同一改动的配套。
 
 ### 5.6 片段与交付接口（`replication_clips.py` / `replication_delivery.py`）
 

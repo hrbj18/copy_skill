@@ -617,7 +617,7 @@
         "min_seconds": 3,
         "max_seconds": 8,
         "max_per_video": 2,
-        "max_total": 12
+        "max_total": 24
       },
       "retention": {
         "keep_source_video": true
