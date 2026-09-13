@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0",
+  "purpose": "新闻视觉锚点 V1 官方历史样例；仅用于受控素材检索验收。",
+  "stories": [
+    {
+      "story_id": "first-championship-robotics",
+      "target_date": "2026-08-28",
+      "title_zh": "FIRST 公布 2026 Championship 机器人比赛获奖队伍",
+      "summary_zh": "FIRST 官方赛后文章公布 2026 Championship 机器人比赛获奖队伍，并展示参赛队伍与比赛现场。",
+      "confirmation_status": "official_primary_source",
+      "category": "robot_event",
+      "visual_subject": "2026 FIRST Championship 机器人比赛",
+      "subject_aliases": ["FIRST Championship", "DECODE FIRST Championship", "FIRST Robotics"],
+      "official_sources": [
+        {
+          "publisher": "FIRST",
+          "role": "赛事官方赛后文章",
+          "url": "https://community.firstinspires.org/congratulations-to-our-decode-first-championship-teams"
+        }
+      ]
+    },
+    {
+      "story_id": "mario-kart-world-release",
+      "target_date": "2026-08-28",
+      "title_zh": "任天堂发布《马力欧卡丁车世界》",
+      "summary_zh": "任天堂官方产品页面展示《马力欧卡丁车世界》的游戏封面、角色与实机视觉。",
+      "confirmation_status": "official_primary_source",
+      "category": "game_release",
+      "visual_subject": "马力欧卡丁车世界",
+      "subject_aliases": ["Mario Kart World", "マリオカート ワールド"],
+      "official_sources": [
+        {
+          "publisher": "Nintendo",
+          "role": "游戏官方页面",
+          "url": "https://www.nintendo.com/store/products/mario-kart-world-switch-2/"
+        }
+      ]
+    },
+    {
+      "story_id": "github-copilot-app-ga",
+      "target_date": "2026-08-28",
+      "title_zh": "GitHub Copilot app 正式发布",
+      "summary_zh": "GitHub 官方更新宣布 Copilot app 已面向 macOS、Windows 和 Linux 正式提供。",
+      "confirmation_status": "official_primary_source",
+      "category": "ai_product",
+      "visual_subject": "GitHub Copilot app",
+      "subject_aliases": ["Copilot app", "GitHub Copilot desktop"],
+      "official_sources": [
+        {
+          "publisher": "GitHub",
+          "role": "产品官方公告",
+          "url": "https://github.blog/changelog/2026-06-17-github-copilot-app-generally-available/"
+        }
+      ]
+    }
+  ]
+}

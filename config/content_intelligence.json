@@ -1,0 +1,781 @@
+{
+  "version": "1.0",
+  "timezone": "Asia/Shanghai",
+  "media_tools": {
+    "ffmpeg": "D:\\刘宇钊\\codex_work\\视频下载dy\\.tools\\ffmpeg\\ffmpeg-master-latest-win64-gpl\\bin\\ffmpeg.exe",
+    "ffprobe": "D:\\刘宇钊\\codex_work\\视频下载dy\\.tools\\ffmpeg\\ffmpeg-master-latest-win64-gpl\\bin\\ffprobe.exe"
+  },
+  "window_mode": "target_calendar_day",
+  "top_n": 30,
+  "state_path": "data/state/seen_videos.json",
+  "jobs": {
+    "state_path": "data/state/workbench_status.json",
+    "control_path": "data/state/workbench_control.json",
+    "lock_root": "data/state/locks",
+    "log_root": "data/logs",
+    "daily_news": {
+      "schedule_time": "02:00",
+      "output_root": "output/daily-news",
+      "max_output_items": 5,
+      "max_douyin_reference_videos": 10,
+      "source_timeout_seconds": 20,
+      "sources": [
+        {"name": "OpenAI News", "url": "https://openai.com/news/rss.xml", "kind": "official", "enabled": true},
+        {"name": "Google Blog", "url": "https://blog.google/feed/", "kind": "official", "enabled": true},
+        {"name": "GitHub Changelog", "url": "https://github.blog/changelog/feed/", "kind": "official", "enabled": true}
+      ]
+    },
+    "douyin_tech_ranking": {
+      "output_root": "output/douyin-tech-ranking",
+      "max_metadata_records": 10,
+      "keywords": ["AI新品"],
+      "weights": {
+        "like": 22.0,
+        "comment": 20.0,
+        "collect": 18.0,
+        "share": 22.0,
+        "related_videos": 8.0,
+        "freshness": 10.0
+      }
+    },
+    "trusted_account_news": {
+      "output_root": "output/trusted-news-accounts",
+      "temp_root": "data/temp/trusted-news-accounts",
+      "window_hours": 48,
+      "max_items": 10,
+      "hard_max_items": 10,
+      "min_description_chars": 120,
+      "min_asr_chars": 40,
+      "collection_timeout_seconds": 120,
+      "asr_timeout_seconds": 300,
+      "total_timeout_seconds": 900,
+      "ai_brief": {
+        "enabled": true,
+        "auto_after_collection": true,
+        "prompt_version": "trusted-news-editorial-v2",
+        "schema_version": "1.0",
+        "max_items": 10,
+        "max_chars_per_item": 6000,
+        "max_total_chars": 40000,
+        "max_output_tokens": 3200,
+        "request_limit": 1
+      },
+      "visual_ocr": {
+        "enabled": true,
+        "ffmpeg_path": "D:\\刘宇钊\\codex_work\\视频下载dy\\.tools\\ffmpeg\\ffmpeg-master-latest-win64-gpl\\bin\\ffmpeg.exe",
+        "ffprobe_path": "D:\\刘宇钊\\codex_work\\视频下载dy\\.tools\\ffmpeg\\ffmpeg-master-latest-win64-gpl\\bin\\ffprobe.exe",
+        "frame_strategy": "scene_plus_interval_guard",
+        "scene_threshold": 0.15,
+        "interval_seconds": 1.0,
+        "first_pass_width": 960,
+        "retry_width": 1280,
+        "retry_max_frames": 10,
+        "per_video_timeout_seconds": 60,
+        "batch_timeout_seconds": 480,
+        "batch_soft_frame_limit": 300,
+        "batch_hard_frame_limit": 400,
+        "frame_budgets": [
+          {"max_duration_seconds": 15, "first_pass": 20, "hard": 30},
+          {"max_duration_seconds": 30, "first_pass": 30, "hard": 45},
+          {"max_duration_seconds": 60, "first_pass": 40, "hard": 60},
+          {"max_duration_seconds": 120, "first_pass": 60, "hard": 80},
+          {"max_duration_seconds": null, "first_pass": 80, "hard": 100}
+        ],
+        "usable_min_chars": 8,
+        "usable_min_confidence": 0.65,
+        "success_min_chars": 60,
+        "success_min_card_chars": 15,
+        "success_min_cards": 2,
+        "success_min_confidence": 0.75,
+        "success_min_coverage": 0.7,
+        "partial_min_chars": 15,
+        "partial_min_confidence": 0.55,
+        "partial_min_coverage": 0.3,
+        "text_similarity": 0.88,
+        "near_identical_mean_delta": 0.5,
+        "near_identical_changed_ratio": 0.001
+      },
+      "weights": {
+        "like": 30.0,
+        "comment": 25.0,
+        "collect": 18.0,
+        "share": 17.0,
+        "freshness": 10.0
+      }
+    },
+    "account_pool": {
+      "state_path": "data/state/candidate_accounts.json",
+      "output_root": "output/account-pool",
+      "temp_root": "data/temp/account-pool",
+      "window_days": 14,
+      "max_posts_per_account": 30,
+      "collection_timeout_seconds": 120,
+      "total_timeout_seconds": 300,
+      "concurrency": 1,
+      "short_video_max_seconds": 180,
+      "min_sample_posts": 5,
+      "thresholds": {
+        "core_min_active_days": 10,
+        "supplemental_min_active_days": 5,
+        "min_technology_news_ratio": 0.6,
+        "min_short_video_ratio": 0.6,
+        "max_promotion_ratio": 0.3,
+        "min_duration_coverage": 0.6
+      },
+      "technology_keywords": ["AI", "人工智能", "大模型", "芯片", "科技", "手机", "机器人", "软件", "硬件", "互联网", "发布", "开源", "算力", "数据中心", "苹果", "华为", "小米", "英伟达", "OpenAI"],
+      "promotion_keywords": ["课程", "训练营", "报名", "购买", "优惠", "下单", "直播间", "咨询", "招生", "带货", "限时福利"],
+      "visual_sampling": {
+        "enabled": false,
+        "global_max_samples": 3,
+        "audio_policy": "never"
+      },
+      "initial_candidates": [
+        {
+          "display_name": "量子位",
+          "profile_url": "https://www.douyin.com/user/MS4wLjABAAAA1bL6-89P1h_ODlkg17TXKneHuPfHijf8ogsmg6gPVAQ",
+          "note": "候选观察账号；未经用户手动晋级。"
+        },
+        {
+          "display_name": "36氪",
+          "profile_url": "https://www.douyin.com/user/MS4wLjABAAAAVlVXeG5jSANae673ZqtesxdJnMXcffIRYggdheHgyNA",
+          "note": "候选观察账号；未经用户手动晋级。"
+        },
+        {
+          "display_name": "大计算AI产业",
+          "id": "42896519316",
+          "profile_url": "https://www.douyin.com/user/MS4wLjABAAAArcRAVxpIteqgtpJ7yeKGeD2bUwheN4_Ulb2A4WV6-aqsulGktxw_ibElK2oeFjhk",
+          "lifecycle_status": "candidate",
+          "enabled": true,
+          "production_role": "topic_radar",
+          "discovery_enabled": true,
+          "source_group_id": "kaishi-dajisuan-ai-matrix",
+          "source_group_name": "大计算 / 开市科技矩阵",
+          "editorial_lane": "ai_general",
+          "note": "选题雷达候选；不构成 trusted、benchmark 或事实来源。"
+        },
+        {
+          "display_name": "大计算AI产业平台",
+          "id": "44882093155",
+          "profile_url": "https://www.douyin.com/user/MS4wLjABAAAAgq4RryZ2DMxbpwxcM012yGzkGPJUdlKSUySPWfbG3_1a3OkjIUYrE_Py-TAs3sMC",
+          "lifecycle_status": "candidate",
+          "enabled": true,
+          "production_role": "topic_radar",
+          "discovery_enabled": true,
+          "source_group_id": "kaishi-dajisuan-ai-matrix",
+          "source_group_name": "大计算 / 开市科技矩阵",
+          "editorial_lane": "compute_infrastructure",
+          "note": "选题雷达候选；不构成 trusted、benchmark 或事实来源。"
+        },
+        {
+          "display_name": "大计算算力炼丹炉",
+          "id": "49506654128",
+          "profile_url": "https://www.douyin.com/user/MS4wLjABAAAAyGZquNZOuBYdFAUgPU47rW2VECNk0umlDyjeojSPPn0nZQvnda1nEoE_SdQo1VQc",
+          "lifecycle_status": "candidate",
+          "enabled": true,
+          "production_role": "topic_radar",
+          "discovery_enabled": true,
+          "source_group_id": "kaishi-dajisuan-ai-matrix",
+          "source_group_name": "大计算 / 开市科技矩阵",
+          "editorial_lane": "chips_hardware",
+          "note": "选题雷达候选；不构成 trusted、benchmark 或事实来源。"
+        }
+      ]
+    },
+    "visual_anchor": {
+      "stories_path": "config/visual_anchor_stories.json",
+      "output_root": "output/visual-anchor",
+      "temp_root": "data/temp/visual-anchor",
+      "max_stories": 3,
+      "max_candidates": 12,
+      "max_final_assets": 3,
+      "minimum_relevance_score": 45,
+      "total_timeout_seconds_per_story": 300,
+      "request_timeout_seconds": 15,
+      "max_requests_per_story": 10,
+      "max_total_bytes_per_story": 52428800,
+      "max_asset_bytes": 15728640,
+      "max_html_bytes": 2097152,
+      "min_dimension": 480,
+      "max_redirects": 3,
+      "fake_ip_networks": [
+        "198.18.0.0/15",
+        "fd7a:746f:6c69:6e65:66::/96"
+      ],
+      "generic_negative_terms": ["AI大脑", "蓝色电路", "通用机器人", "generic AI", "stock photo", "placeholder", "avatar", "二维码"],
+      "allowed_domains": [
+        "firstinspires.org",
+        "www.firstinspires.org",
+        "info.firstinspires.org",
+        "community.firstinspires.org",
+        "nintendo.com",
+        "www.nintendo.com",
+        "assets.nintendo.com",
+        "openai.com",
+        "www.openai.com",
+        "images.ctfassets.net",
+        "github.blog",
+        "sspai.com",
+        "cdn.sspai.com",
+        "cdnfile.sspai.com",
+        "www.ithome.com",
+        "img.ithome.com",
+        "apps.apple.com",
+        "is1-ssl.mzstatic.com",
+        "developer.cloud.tencent.com",
+        "developer.qcloudimg.com",
+        "qccommunity.qcloudimg.com",
+        "qcloudimg.tencent-cloud.cn",
+        "hyperos.mi.com",
+        "cia.hyperos.mi.com",
+        "www.beijing.gov.cn"
+      ],
+      "rss_sources": [
+        {
+          "name": "少数派",
+          "url": "https://sspai.com/feed",
+          "locale": "zh-CN",
+          "enabled": true,
+          "health_check": {
+            "checked_at": "2026-08-28T15:40:00+08:00",
+            "status": "reachable_no_images",
+            "http_status": 200,
+            "content_type": "application/xml",
+            "image_candidates_observed": 0
+          }
+        },
+        {
+          "name": "IT之家",
+          "url": "https://www.ithome.com/rss/",
+          "locale": "zh-CN",
+          "enabled": true,
+          "health_check": {
+            "checked_at": "2026-08-28T15:40:00+08:00",
+            "status": "reachable_with_embedded_images",
+            "http_status": 200,
+            "content_type": "text/xml",
+            "image_candidates_observed": 55
+          }
+        }
+      ],
+      "douyin": {
+        "enabled_by_default": false,
+        "max_queries": 3,
+        "max_results": 8,
+        "max_cover_downloads": 2,
+        "max_cover_requests": 4,
+        "max_cover_bytes_each": 8388608,
+        "max_cover_bytes_total": 12582912,
+        "max_video_downloads": 1,
+        "max_video_bytes": 62914560,
+        "max_video_duration_seconds": 90,
+        "max_frames": 8,
+        "audio_policy": "never",
+        "concurrency": 1
+      },
+      "domestic_smoke": {
+        "batch_paths": [
+          "config/visual_anchor_domestic_batch_1.json",
+          "config/visual_anchor_domestic_batch_2.json"
+        ],
+        "output_root": "output/visual-anchor-domestic-smoke",
+        "target_date": "2026-08-28"
+      }
+    },
+    "material_probe": {
+      "story_path": "config/material_probe_story.json",
+      "output_root": "output/material-probe",
+      "temp_root": "data/temp/material-probe",
+      "total_timeout_seconds": 300,
+      "request_timeout_seconds": 15,
+      "max_requests": 10,
+      "max_assets": 5,
+      "max_total_bytes": 52428800,
+      "max_asset_bytes": 15728640,
+      "max_html_bytes": 2097152,
+      "min_dimension": 480,
+      "max_official_images": 2,
+      "max_commons_assets": 1,
+      "max_redirects": 3,
+      "fake_ip_networks": [
+        "198.18.0.0/15",
+        "fd7a:746f:6c69:6e65:66::/96"
+      ],
+      "allowed_domains": [
+        "gatesnotes.com",
+        "www.gatesnotes.com",
+        "assets.gatesnotes.com",
+        "commons.wikimedia.org",
+        "upload.wikimedia.org"
+      ],
+      "supported_commons_licenses": [
+        "cc0",
+        "public domain",
+        "cc by 2.0",
+        "cc by 3.0",
+        "cc by 4.0",
+        "cc by-sa 2.0",
+        "cc by-sa 3.0",
+        "cc by-sa 4.0"
+      ]
+    },
+    "daily_material_pack": {
+      "selection_input": "config/daily_material_pack_domestic_2026-08-28.json",
+      "output_root": "output/daily-material-pack",
+      "temp_root": "data/temp/daily-material-pack",
+      "max_stories": 4,
+      "max_assets_per_story": 2,
+      "max_wall_seconds": 300,
+      "max_network_requests": 40,
+      "max_download_bytes": 209715200,
+      "quick_by_default": true
+    },
+    "daily_hot_candidate_pool_v2": {
+      "output_root": "output/每日新闻素材",
+      "max_wall_seconds": 3600,
+      "per_keyword_limit": 10,
+      "max_raw_records": 100,
+      "max_events": 30,
+      "supplemental_stop_events": 20,
+      "core_keywords": ["科技快讯", "AI新品", "大模型发布", "开源大模型", "芯片发布", "人形机器人"],
+      "supplemental_keywords": ["最新开源大模型", "热门开源项目", "GitHub热门项目", "智能硬件新品", "手机系统更新"],
+      "editorial_priority": {
+        "enabled": true,
+        "weights": {
+          "heat": 0.45,
+          "strategic_significance": 0.25,
+          "public_relevance": 0.20,
+          "discussion_value": 0.10
+        }
+      },
+      "max_image_requests": 6,
+      "max_image_bytes": 52428800,
+      "max_asset_bytes": 15728640,
+      "image_total_seconds": 900,
+      "story_enrichment": {
+        "enabled": true,
+        "max_detailed_stories": 40,
+        "max_selected_videos": 40,
+        "max_supporting_videos": 20,
+        "max_evidence_videos": 3,
+        "min_description_chars": 80,
+        "min_evidence_chars": 40,
+        "max_media_videos": 20,
+        "media_total_seconds": 900,
+        "per_media_timeout_seconds": 45,
+        "ocr_frame_soft_limit": 160,
+        "ocr_frame_hard_limit": 220,
+        "max_asr_videos": 0,
+        "asr_total_seconds": 180,
+        "per_asr_timeout_seconds": 90,
+        "llm_max_batches": 4,
+        "llm_batch_size": 10,
+        "config_path": "config/content_intelligence.json"
+      },
+      "consumer_hot_list": {
+        "enabled": true,
+        "target_count": 20,
+        "llm_batch_size": 10,
+        "max_output_tokens": 3000
+      },
+      "public_detail_discovery": {
+        "enabled": true,
+        "provider": "google_news_rss",
+        "max_queries": 40,
+        "max_results_per_query": 3,
+        "request_timeout_seconds": 12,
+        "max_response_bytes": 131072,
+        "max_total_bytes": 1048576,
+        "min_detail_chars": 60,
+        "freshness_days": 3,
+        "freshness_grace_hours": 12
+      },
+      "official_discovery": {
+        "enabled": true,
+        "max_sources": 14,
+        "max_requests": 14,
+        "max_total_bytes": 10485760,
+        "max_page_bytes": 1048576,
+        "total_timeout_seconds": 300,
+        "request_timeout_seconds": 20,
+        "max_redirects": 2,
+        "max_events": 50,
+        "douyin_signal_max_events": 20,
+        "douyin_signal_per_event_limit": 5,
+        "article_detail_max_events": 24,
+        "article_detail_max_requests": 48,
+        "article_detail_max_total_bytes": 12582912,
+        "article_detail_max_page_bytes": 524288,
+        "article_detail_total_timeout_seconds": 300,
+        "article_detail_timeout_seconds": 12,
+        "article_detail_allowed_domains": ["www.stdaily.com", "www.chinanews.com", "www.cas.cn", "www.news.cn", "www.xinhuanet.com", "www.cnr.cn", "news.cnr.cn", "www.people.com.cn", "paper.people.com.cn", "www.36kr.com", "m.36kr.com", "www.ithome.com", "www.leiphone.com", "www.qbitai.com", "www.geekpark.net", "www.thepaper.cn", "www.cls.cn", "www.caixin.com", "www.jiemian.com", "www.huxiu.com", "oschina.net", "www.oschina.net", "finance.sina.com.cn", "www.sina.com.cn", "k.sina.com.cn", "www.eeo.com.cn", "www.miit.gov.cn", "www.cac.gov.cn"],
+        "company_event_priority": {
+          "enabled": true,
+          "routine_exclusion_terms": ["售价", "价格", "优惠", "促销", "售罄", "耳机", "手表", "笔记本", "平板", "显示器", "配色", "海外发布", "例行更新", "修复已知问题"],
+          "context_exclusion_terms": ["呼吁", "吐槽", "建议", "期待", "评论", "实测", "传闻", "曝光", "预测", "争议", "对比", "测评", "怎么看"],
+          "tiers": [
+            {
+              "id": "ai_core",
+              "boost": 12,
+              "aliases": ["OpenAI", "ChatGPT", "Anthropic", "Claude", "Google", "谷歌", "Gemini", "DeepMind", "Meta", "微软", "Microsoft", "Copilot", "英伟达", "NVIDIA", "阿里", "通义", "Qwen", "腾讯", "混元", "Hunyuan", "DeepSeek", "字节", "豆包", "Doubao", "百度", "文心", "ERNIE", "智谱", "GLM", "MiniMax", "月之暗面", "Kimi"],
+              "eligible_categories": ["ai_security", "model_release", "generative_media", "ai_infrastructure", "embodied_ai", "autonomous_mobility"],
+              "action_terms": ["发布", "开源", "上线", "推出", "升级", "更新", "开放", "启动", "交付", "量产", "收购", "融资"]
+            },
+            {
+              "id": "industry_leaders",
+              "boost": 6,
+              "aliases": ["华为", "Huawei", "小米", "Xiaomi", "苹果", "Apple", "特斯拉", "Tesla", "小鹏", "XPeng", "比亚迪", "BYD", "宇树", "Unitree", "智元机器人", "优必选"],
+              "eligible_categories": ["model_release", "generative_media", "ai_infrastructure", "embodied_ai", "autonomous_mobility", "consumer_product"],
+              "required_terms": ["AI", "人工智能", "模型", "芯片", "算力", "机器人", "具身", "智能驾驶", "自动驾驶", "辅助驾驶", "智驾", "系统", "平台", "操作系统"],
+              "action_terms": ["发布", "开源", "上线", "推出", "升级", "更新", "开放", "启动", "交付", "量产", "收购", "融资"]
+            }
+          ]
+        },
+        "brief_localization": {
+          "enabled": true,
+          "max_events": 24,
+          "max_output_tokens": 4800
+        },
+        "reader_editorial": {
+          "enabled": true,
+          "preview_terms": ["预告", "计划", "即将", "将于", "拟", "有望", "或将", "准备推出"],
+          "research_terms": ["评测基准", "benchmark", "测试标准", "数据集", "论文", "协议", "迁移", "企业迁移"],
+          "platform_terms": ["开放平台", "开发者平台", "开放能力", "开放基座", "新增功能", "新增能力", "升级"],
+          "consumer_impact_terms": ["用户", "消费者", "手机", "汽车", "智能硬件", "眼镜", "耳机", "家用", "设备", "应用"],
+          "industry_only_terms": ["开发者", "企业级", "基础设施", "工作流", "连接器", "框架", "协议", "数据驻留"],
+          "mainstream_categories": ["ai_security", "model_release", "generative_media", "policy_governance", "consumer_product", "autonomous_mobility", "embodied_ai"]
+        },
+        "fake_ip_networks": ["198.18.0.0/15", "fd7a:746f:6c69:6e65:66::/96"],
+        "sources": [
+          {"name": "OpenAI News", "url": "https://openai.com/news/rss.xml", "kind": "official", "format": "feed", "allowed_domains": ["openai.com", "www.openai.com"], "enabled": true},
+          {"name": "GitHub Changelog", "url": "https://github.blog/changelog/feed/", "kind": "official", "format": "feed", "allowed_domains": ["github.blog"], "enabled": true},
+          {"name": "Anthropic News", "url": "https://www.anthropic.com/news", "kind": "official", "format": "html_listing", "allowed_domains": ["www.anthropic.com"], "article_path_prefixes": ["/news/", "/claude-"], "enabled": true},
+          {"name": "World Labs Blog", "url": "https://www.worldlabs.ai/blog", "kind": "official", "format": "html_listing", "allowed_domains": ["www.worldlabs.ai"], "article_path_prefixes": ["/blog/"], "enabled": true},
+          {"name": "IT之家 RSS", "url": "https://www.ithome.com/rss/", "kind": "media", "format": "feed", "allowed_domains": ["www.ithome.com"], "enabled": true},
+          {"name": "量子位 RSS", "url": "https://www.qbitai.com/feed", "kind": "media", "format": "feed", "allowed_domains": ["www.qbitai.com"], "enabled": true},
+          {"name": "雷峰网 RSS", "url": "https://www.leiphone.com/feed", "kind": "media", "format": "feed", "allowed_domains": ["www.leiphone.com"], "enabled": true},
+          {"name": "极客公园 RSS", "url": "https://www.geekpark.net/rss", "kind": "media", "format": "feed", "allowed_domains": ["www.geekpark.net"], "enabled": true},
+          {"name": "Google 科技人工智能", "url": "https://news.google.com/rss/search?q=人工智能%20when%3A3d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans", "kind": "news_index", "format": "google_news_rss", "allowed_domains": ["news.google.com"], "enabled": true},
+          {"name": "Google 大模型", "url": "https://news.google.com/rss/search?q=大模型%20when%3A3d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans", "kind": "news_index", "format": "google_news_rss", "allowed_domains": ["news.google.com"], "enabled": true},
+          {"name": "Google 芯片算力", "url": "https://news.google.com/rss/search?q=芯片%20when%3A3d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans", "kind": "news_index", "format": "google_news_rss", "allowed_domains": ["news.google.com"], "enabled": true},
+          {"name": "Google 机器人", "url": "https://news.google.com/rss/search?q=机器人%20when%3A3d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans", "kind": "news_index", "format": "google_news_rss", "allowed_domains": ["news.google.com"], "enabled": true},
+          {"name": "Google 智能硬件", "url": "https://news.google.com/rss/search?q=智能硬件%20when%3A3d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans", "kind": "news_index", "format": "google_news_rss", "allowed_domains": ["news.google.com"], "enabled": true},
+          {"name": "Google 自动驾驶", "url": "https://news.google.com/rss/search?q=自动驾驶%20when%3A3d&hl=zh-CN&gl=CN&ceid=CN:zh-Hans", "kind": "news_index", "format": "google_news_rss", "allowed_domains": ["news.google.com"], "enabled": true}
+        ]
+      },
+      "public_web_discovery": {
+        "enabled": true,
+        "provider": "google_news_rss",
+        "endpoint": "https://news.google.com/rss/search",
+        "max_queries": 12,
+        "max_results_per_query": 5,
+        "request_timeout_seconds": 12,
+        "max_response_bytes": 131072,
+        "max_total_bytes": 1572864,
+        "total_timeout_seconds": 180,
+        "fake_ip_networks": ["198.18.0.0/15", "fd7a:746f:6c69:6e65:66::/96"],
+        "target_count": 20,
+        "queries": [
+          {"id": "openai_model_or_safety", "text": "OpenAI 模型 发布 安全 when:3d"},
+          {"id": "anthropic_model", "text": "Anthropic Claude 模型 发布 when:3d"},
+          {"id": "google_ai", "text": "Google Gemini AI 发布 升级 when:3d"},
+          {"id": "meta_or_nvidia", "text": "Meta NVIDIA AI 芯片 模型 发布 when:3d"},
+          {"id": "tencent_hunyuan", "text": "腾讯 混元 AI 发布 开放 when:3d"},
+          {"id": "alibaba_qwen", "text": "阿里 通义 Qwen 模型 发布 开源 when:3d"},
+          {"id": "domestic_model", "text": "DeepSeek 智谱 MiniMax 大模型 发布 开源 when:3d"},
+          {"id": "ai_security_policy", "text": "AI 安全 监管 网络安全 发布 when:3d"},
+          {"id": "chips_and_compute", "text": "AI 芯片 算力 服务器 发布 建设 when:3d"},
+          {"id": "robotics", "text": "人形机器人 机器人 AI 发布 量产 when:3d"},
+          {"id": "consumer_ai", "text": "AI 硬件 智能设备 手机 新功能 发布 when:3d"},
+          {"id": "mobility_and_esim", "text": "智能驾驶 自动驾驶 AI eSIM 发布 升级 when:3d"}
+        ]
+      },
+      "min_dimension": 480,
+      "max_aspect_ratio": 3.5,
+      "request_timeout_seconds": 15,
+      "max_redirects": 3,
+      "fake_ip_networks": ["198.18.0.0/15", "fd7a:746f:6c69:6e65:66::/96"],
+      "allowed_domains": ["www.stdaily.com", "img.ithome.com", "n.sinaimg.cn", "www.tencent.com"],
+        "weights": {"like": 22.0, "comment": 20.0, "collect": 18.0, "share": 22.0, "freshness": 10.0, "related_videos": 4.0, "source_group_coverage": 2.0, "cross_lane": 2.0},
+      "image_hints": [
+        {"match_all": ["腾讯", "hy4"], "image_url": "https://www.tencent.com/wp-content/uploads/2026/08/image-3-1024x306.png", "source_article_url": "https://www.tencent.com/zh-cn/tencent-releases-and-open-sources-tencent-hy4-preview/", "source_name": "腾讯"},
+        {"match_all": ["谷歌", "omni", "flash"], "image_url": "https://img.ithome.com/newsuploadfiles/2026/8/c9607fcc-2229-4ef0-bc0b-98252552097a.jpg?x-bce-process=image/format,f_auto", "source_article_url": "https://www.ithome.com/0/995/352.htm", "source_name": "IT之家"},
+        {"match_all": ["奔图", "喷墨"], "image_url": "https://www.stdaily.com/web/gdxw/pic/2026-08/27/570592_3da21153-b2a7-47e6-8a71-608d0adceb0e.png", "source_article_url": "https://www.stdaily.com/web/gdxw/2026-08/27/content_570592.html", "source_name": "科技日报"},
+        {"match_all": ["小鹏", "vla"], "image_url": "https://img.ithome.com/newsuploadfiles/2026/8/ab553403-6966-4a8f-bf97-be8d7cd92f1e.jpg", "source_article_url": "https://www.ithome.com/0/995/109.htm", "source_name": "IT之家"},
+        {"match_all": ["玄戒"], "image_url": "https://n.sinaimg.cn/sinakd20260828s/200/w1080h720/20260828/61df-b7336c927f64dcdb2f111be42d729fb8.jpg", "source_article_url": "https://finance.sina.com.cn/jjxw/2026-08-28/doc-inipwxpp9790004.shtml", "source_name": "新浪财经转载"}
+      ]
+    },
+    "daily_material_exchange": {
+        "selection_input": "config/daily_material_exchange_2026-08-28-ranked.json",
+      "output_root": "output/每日新闻素材",
+      "max_wall_seconds": 3600,
+      "max_network_requests": 24,
+      "max_download_bytes": 52428800,
+      "max_html_bytes": 2097152,
+      "max_asset_bytes": 15728640,
+      "min_dimension": 480,
+      "request_timeout_seconds": 15,
+      "max_redirects": 3,
+      "fake_ip_networks": ["198.18.0.0/15", "fd7a:746f:6c69:6e65:66::/96"],
+      "allowed_domains": [
+          "www.ithome.com", "img.ithome.com", "news.cnr.cn", "finance.cnr.cn",
+          "www.cnfin.com", "www.wired.com", "www.cq.gov.cn", "www.miit.gov.cn",
+          "www.news.cn", "www.pantum.cn", "drivers.pantum.cn", "www.xiaopeng.com",
+          "paper.people.com.cn", "m.sohu.com", "q9.itc.cn", "www.stdaily.com", "n.sinaimg.cn"
+      ]
+    },
+    "inspiration": {
+      "output_root": "output/inspiration",
+      "default_reference_videos": 100,
+      "hard_max_reference_videos": 100,
+      "max_detail_videos": 20,
+      "media_analysis_videos": 3,
+      "hard_max_media_videos": 5,
+      "max_output_items": 8,
+      "search_keywords": ["AI新品", "大模型", "科技新闻", "开源项目", "效率软件", "芯片", "机器人", "智能硬件", "黑科技", "未来科技"]
+    },
+    "material_replication": {
+      "output_root": "output/复刻视频",
+      "temp_root": "data/temp/material-replication",
+      "cache_root": "data/cache/material-replication",
+      "media_root": "data/media/material-replication",
+      "default_pool_size": 80,
+      "min_pool_size": 40,
+      "max_pool_size": 120,
+      "min_keywords": 3,
+      "max_keywords": 10,
+      "theme_max_chars": 12,
+      "max_path_chars": 260,
+      "budget": {
+        "collection_seconds": 480,
+        "collection_hard_seconds": 720,
+        "download_seconds": 480,
+        "download_hard_seconds": 720,
+        "asr_seconds": 180,
+        "asr_hard_seconds": 300,
+        "face_seconds": 360,
+        "face_hard_seconds": 600,
+        "clip_seconds": 180,
+        "clip_hard_seconds": 360,
+        "total_seconds": 1800,
+        "total_hard_seconds": 2700
+      },
+      "script_replica": {
+        "target_count": 1,
+        "min_chars": 150,
+        "min_chars_per_second": 1.2,
+        "min_seconds": 30,
+        "max_seconds": 300,
+        "top_ratio": 0.1,
+        "min_top": 5
+      },
+      "material_replica": {
+        "target_count": 4,
+        "min_count": 2,
+        "min_seconds": 15,
+        "max_seconds": 180,
+        "max_speech_rate": 1.2,
+        "_motion_threshold_comment": "旧键 motion_threshold=0.30 把「帧对占比」与「逐帧灰度变化量」两个量纲混用，使运动判据恒为假（死代码）；该键已废弃、不做语义映射。运动判据拆成两个独立阈值：motion_delta_threshold（单对帧变化量，0~1）与 min_motion_frame_ratio（变化帧对占比下限，0~1）。默认值在 9.12 语料 46 条真实抖音片上标定。",
+        "motion_delta_threshold": 0.02,
+        "min_motion_frame_ratio": 0.2,
+        "max_ocr_coverage": 0.4,
+        "max_per_author": 1,
+        "heat_gate_percentile": 0.0
+      },
+      "prefilter": {
+        "enabled": true,
+        "min_seconds": 10,
+        "max_seconds": 300,
+        "heat_gate_percentile": 0.0,
+        "allow_unknown_duration": true,
+        "drop_non_video": true,
+        "_drop_non_video_comment": "drop_non_video（默认 true，受 enabled 管辖）：复用一个既有的 is_video_candidate()，在下载前剔除无视频流的作品（抖音图文帖 aweme_type=68、或下载地址指向图文帖配乐），使其不再占排序名额与下载预算。判定顺序：排除词 → 图文 → 时长 → 热度。置 false 可逐字段还原改动前的候选池。",
+        "_exclude_terms_comment": "exclude_terms 默认空（不设全局排除词）；标题（忽略大小写）包含任一排除词即在下载前剔除。可用 --exclude-term 追加。",
+        "exclude_terms": []
+      },
+      "search": {
+        "_comment": "min_searched_keywords（可选，默认不设置）：设置后把候选池规模抬升到 该值×10，使爬虫的 候选池规模//10 关键词切片覆盖足够多搜索词；受 max_pool_size 上限约束，无法满足时会告警。不设置时行为与既有完全一致。"
+      },
+      "download_budget": {
+        "enabled": true,
+        "max_count": 12,
+        "max_bytes": 157286400,
+        "max_item_bytes": 31457280
+      },
+      "validation": {
+        "_comment": "decode_time_budget_seconds=0 表示不做全片解码、直接抽帧校验（如实记 degraded）；解码预算 <0 由 config 校验拒绝。时长窗口（prefilter.min_seconds/max_seconds）是一处配置、两处执行：元数据有时长 -> 下载前判；元数据无时长 -> 下载后按实测时长执行同一窗口。",
+        "enabled": true,
+        "duration_tolerance": 0.05,
+        "full_decode": true,
+        "decode_time_budget_seconds": 20,
+        "require_metadata_duration": false,
+        "cache_attestation": true
+      },
+      "clips": {
+        "min_seconds": 3,
+        "max_seconds": 8,
+        "max_per_video": 2,
+        "max_total": 12
+      },
+      "retention": {
+        "keep_source_video": true
+      },
+      "download": {
+        "timeout_seconds": 180,
+        "retries": 3,
+        "max_video_bytes": 524288000
+      },
+      "face": {
+        "backend_priority": ["opencv_yunet", "opencv_dnn"],
+        "sampling_interval_seconds": 1,
+        "max_frames": 120,
+        "frame_width": 960,
+        "min_face_area_ratio": 0.015,
+        "free_max_ratio": 0.05,
+        "low_max_ratio": 0.15,
+        "model_root": "data/models/face",
+        "auto_download": true,
+        "download_timeout_seconds": 60,
+        "score_threshold": 0.9,
+        "yunet": {
+          "file": "face_detection_yunet_2023mar.onnx",
+          "url": "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
+          "expected_bytes": 232589
+        },
+        "dnn": {
+          "prototxt": "",
+          "weights": ""
+        }
+      }
+    }
+  },
+  "workbench": {
+    "title": "双轨科技选题编辑工作台",
+    "refresh_seconds": 5,
+    "task_name": "CopySkillDailyTechNews",
+    "editorial_override_path": "data/state/editorial_overrides.json",
+    "editorial_output_root": "output/editorial-board"
+  },
+  "media_crawler": {
+    "root": "third_party/MediaCrawler",
+    "python": "third_party/MediaCrawler/.venv/Scripts/python.exe",
+    "raw_output": "data/raw/mediacrawler",
+    "runs_output": "data/raw/mediacrawler/runs",
+    "chrome_path": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "user_data_dir": "third_party/MediaCrawler/browser_data/cdp_dy_user_data_dir",
+    "cdp_port": 9223,
+    "cdp_timeout_seconds": 2,
+    "browser_start_timeout_seconds": 20,
+    "browser_lock_timeout_seconds": 10,
+    "browser_lease_root": "data/state/browser-leases",
+    "browser_state_path": "data/state/project_browser_status.json",
+    "max_project_pages": 1,
+    "close_owned_browser_on_completion": true,
+    "keep_open_on_needs_login": true,
+    "reuse_persistent_profile": true,
+    "navigation_timeout_seconds": 90,
+    "collection_timeout_seconds": 300,
+    "max_notes_per_source": 30,
+    "comments_enabled": false
+  },
+  "benchmark_accounts": [
+    {
+      "id": "48304051157",
+      "name": "benchmark-48304051157",
+      "sec_uid": "MS4wLjABAAAAZRap_ZAI105qW8rpkSxJQ1nFjbA8mCc_bYKV231bRqsUAw2QiYkowFE2TvWilC34",
+      "url": "https://www.douyin.com/user/MS4wLjABAAAAZRap_ZAI105qW8rpkSxJQ1nFjbA8mCc_bYKV231bRqsUAw2QiYkowFE2TvWilC34",
+      "category": "hardware_products",
+      "enabled": true
+    },
+    {
+      "id": "dyontudflg8w",
+      "name": "AI壹号",
+      "sec_uid": "MS4wLjABAAAAEOyzyjzVibQEwo1VoHKzHg8YqMosPi4e6-mBxNQEIs8xSAnJ3l3sM2HgJf_4x5q0",
+      "url": "https://www.douyin.com/user/MS4wLjABAAAAEOyzyjzVibQEwo1VoHKzHg8YqMosPi4e6-mBxNQEIs8xSAnJ3l3sM2HgJf_4x5q0",
+      "category": "hardware_products",
+      "enabled": true
+    },
+    {
+      "id": "844568434",
+      "name": "AI硬件情报局",
+      "sec_uid": "MS4wLjABAAAA92Wjgi6DlQr0S6idRdT3mo3TUh_GrkaLjbX-BHgpBVw",
+      "url": "https://www.douyin.com/user/MS4wLjABAAAA92Wjgi6DlQr0S6idRdT3mo3TUh_GrkaLjbX-BHgpBVw",
+      "category": "hardware_products",
+      "enabled": true
+    }
+  ],
+  "trusted_news_accounts": [
+    {
+      "id": "caiyan-ai",
+      "stable_id": "MS4wLjABAAAAfVfARdZ9z4DHsrfaQzanny7s5yOt6CmTHPmIILlx8QAt_-VsBRTWfUAiQ_0v9eJM",
+      "expected_creator_hash": "859ea7092dbf1121",
+      "name": "财研网AI",
+      "share_entry_url": "https://v.douyin.com/PoAPJ56GPu0/",
+      "profile_url": "https://www.douyin.com/user/MS4wLjABAAAAfVfARdZ9z4DHsrfaQzanny7s5yOt6CmTHPmIILlx8QAt_-VsBRTWfUAiQ_0v9eJM",
+      "category": "technology_news",
+      "enabled": true,
+      "source_tier": "trusted_creator",
+      "editorial_confidence": "high",
+      "approval_basis": "user_curated_account",
+      "content_extraction_profile": "visual_text_only",
+      "audio_policy": "never",
+      "frame_strategy": "scene_plus_interval_guard",
+      "window_hours": 48,
+      "max_items": 10,
+      "follower_count_observed": null,
+      "notes": "用户口述该账号约两百万粉丝；未从当前公开页面观察到可确认的实时粉丝数。"
+    }
+  ],
+  "materials": {
+    "recent_days": 30,
+    "top_n": 3,
+    "max_per_account": 2,
+    "media_root": "data/media",
+    "output_root": "output/materials",
+    "download_timeout_seconds": 180,
+    "download_retries": 3,
+    "max_video_bytes": 524288000,
+    "cache_root": "data/cache/materials",
+    "retention": {
+      "keep_video": false,
+      "keep_audio": false,
+      "temp_root": "data/temp/materials",
+      "quota_bytes": 2147483648,
+      "ttl_hours": 24
+    },
+    "transcription": {
+      "enabled": true,
+      "model": "base",
+      "device": "cpu",
+      "compute_type": "int8",
+      "cpu_threads": 2,
+      "language": "zh",
+      "beam_size": 5,
+      "chunk_seconds": 180,
+      "model_cache": "data/models/faster-whisper"
+    },
+    "ocr": {
+      "enabled": true,
+      "frame_interval_seconds": 3,
+      "max_frames": 20,
+      "max_width": 960
+    },
+    "llm": {
+      "enabled": true,
+      "base_url": "",
+      "allow_insecure_http": true,
+      "model": "",
+      "chunk_chars": 8000,
+      "timeout_seconds": 120,
+      "retries": 3,
+      "analysis_version": "2026-08-26-v1"
+    }
+  },
+  "categories": {
+    "daily_news": ["发布", "宣布", "上线", "更新", "事故", "漏洞", "召回", "涨价", "降价"],
+    "ai_models": ["大模型", "模型", "AI", "人工智能", "推理", "多模态", "智能体", "Agent"],
+    "software_tools": ["软件", "应用", "App", "工具", "插件", "浏览器", "效率"],
+    "hardware_products": ["硬件", "芯片", "机器人", "手机", "电脑", "眼镜", "耳机", "设备"],
+    "open_source": ["开源", "GitHub", "仓库", "项目", "代码", "框架"],
+    "interesting_tech": ["新品", "黑科技", "有趣", "首次", "实验", "原型", "未来科技"]
+  }
+}

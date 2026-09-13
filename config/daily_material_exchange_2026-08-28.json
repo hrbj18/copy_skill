@@ -1,0 +1,170 @@
+{
+  "schema_version": "1.0",
+  "selection_source": "public_web_reuse_verified_2026-08-29",
+  "simulated_run_at": "2026-08-29T02:00:00+08:00",
+  "business_date": "2026-08-28",
+  "stories": [
+    {
+      "story_id": "national-compute-interconnect-regional-nodes",
+      "title_zh": "17 个省市入选国家算力互联互通区域节点",
+      "event_at": "2026-08-28",
+      "content_published_at": "2026-08-28T23:34:47+08:00",
+      "heat": {
+        "status": "public_signal_only",
+        "account_coverage": 0,
+        "accounts": [],
+        "interactions": null,
+        "public_signals": [{
+          "name": "IT之家", "url": "https://www.ithome.com/0/995/814.htm", "expected_text": "全国算力互联互通区域节点名单出炉", "published_at": "2026-08-28T23:34:47+08:00", "signal_kind": "reliable_publication", "use": "8月28日公开发现信号"
+        }]
+      },
+      "evidence_status": "confirmed_two_reliable",
+      "confirmed_facts": [
+        "8 月 28 日，工业和信息化部办公厅公布国家算力互联互通区域节点建设名单，17 个省（自治区、直辖市）入选。",
+        "重庆市政府次日公开确认重庆在该名单中；区域节点服务于算力资源标准化互联与高效流动。"
+      ],
+      "pending_verification": ["各区域节点后续建设进度与实际服务能力。"],
+      "claims_to_verify": ["不要把名单入选等同于节点已经全面投入运营。"],
+      "do_not_claim": ["不得扩写未列明的区域、运营主体或算力规模。", "不得把公开名单图裁成无来源的泛化算力图。"],
+      "fact_sources": [
+        {"name": "IT之家", "url": "https://www.ithome.com/0/995/814.htm", "expected_text": "17 个省（自治区、直辖市）入选", "use": "名单与发布日期交叉核对"},
+        {"name": "重庆市人民政府", "url": "https://www.cq.gov.cn/ywdt/jrcq/202608/t20260829_16000531.html", "expected_text": "17个省（自治区、直辖市）入选", "use": "政府后续确认"}
+      ],
+      "user_value": "理解全国算力资源互联调度的区域落点，而不是把它误解为单一数据中心落成。",
+      "editorial_angle": "从名单公布解释“1+M+N”架构里的区域节点承担什么角色。",
+      "visual_intent": "使用名单原图，保留标题和表格结构。",
+      "images": [{
+        "image_url": "https://img.ithome.com/newsuploadfiles/2026/8/38ea0629-ba9d-4729-96d3-c2d54c176444.png?x-bce-process=image/format,f_auto",
+        "source_article_url": "https://www.ithome.com/0/995/814.htm", "source_name": "IT之家所附官方名单", "visual_kind": "official_document_visual",
+        "subject_match": true, "event_match": true, "visual_usable": true,
+        "selection_reason": "名单附件直接呈现国家算力互联互通区域节点入选信息，主体和事件均可见。",
+        "attribution_text": "IT之家所附官方名单；单独摄影署名未见。", "composition_hint": "竖版名单全图，保留标题和表头。", "crop_hint": "不得裁掉“国家算力互联互通区域节点入选名单”标题。",
+        "visual_qa": {"reviewed": true, "content": "国家算力互联互通区域节点入选名单表格", "accuracy": "精准对应名单公布事件", "duplicate_or_wrong": "非重复、非错误事件", "watermark_text": "无可见媒体水印", "clarity": "表格文字清晰", "orientation": "竖版长图，可用于资料页或分段展示"}
+      }],
+      "rejected_visuals": []
+    },
+    {
+      "story_id": "meituan-ai-core-business-strategy",
+      "title_zh": "王兴：美团 AI 模型和产品将服务主业，不做“Token 工厂”",
+      "event_at": "2026-08-28",
+      "content_published_at": "2026-08-28T23:08:35+08:00",
+      "heat": {"status": "public_signal_only", "account_coverage": 0, "accounts": [], "interactions": null, "public_signals": [{"name": "IT之家", "url": "https://www.ithome.com/0/995/807.htm", "expected_text": "美团 CEO 王兴：AI 模型和产品将用于支持主业发展", "published_at": "2026-08-28T23:08:35+08:00", "signal_kind": "reliable_publication", "use": "8月28日公开发现信号"}]},
+      "evidence_status": "confirmed_two_reliable",
+      "confirmed_facts": ["王兴在美团二季度财报电话会上表示，AI 模型和产品将用于支持主业、提升用户和商户体验及经营效率。", "报道引述其称美团不会成为“Token 工厂”。"],
+      "pending_verification": ["LongCat-2.0 的性能和具体部署范围应单独按官方技术材料核对。"],
+      "claims_to_verify": ["不要把战略表述写成已公布的新产品或独立业务收入指引。"],
+      "do_not_claim": ["不得把 LongCat-2.0 开源画面说成王兴电话会现场图。", "不得补写未经来源支持的模型参数或财务预测。"],
+      "fact_sources": [
+        {"name": "IT之家", "url": "https://www.ithome.com/0/995/807.htm", "expected_text": "我们不会成为 Token 工厂", "use": "电话会表述核对"},
+        {"name": "新华财经", "url": "https://www.cnfin.com/yw-lb/detail/20260828/4462184_1.html", "expected_text": "不会成为Token工厂", "use": "独立可靠报道交叉核对"}
+      ],
+      "user_value": "把“做模型”与“用 AI 改造本地生活业务”区分开，理解公司策略的落点。",
+      "editorial_angle": "从电话会表述讨论 AI 如何服务既有工作流，而不是把 token 规模当作唯一目标。",
+      "visual_intent": "使用文中直接提及的 LongCat-2.0 产品视觉，并明确不是电话会现场。",
+      "images": [{
+        "image_url": "https://img.ithome.com/newsuploadfiles/2026/8/adf782d0-a8eb-4261-9a23-a13db6e8423b.jpg@s_2,w_820,h_547",
+        "source_article_url": "https://www.ithome.com/0/995/807.htm", "source_name": "IT之家", "visual_kind": "official_product_visual",
+        "subject_match": true, "event_match": true, "visual_usable": true,
+        "selection_reason": "画面是报道中直接提及的美团 LongCat-2.0 产品视觉，准确服务于 AI 战略语境。",
+        "attribution_text": "IT之家报道配图；单独摄影署名未见。", "composition_hint": "横版保留 LongCat-2.0 与美团技术团队标识。", "crop_hint": "不得裁掉产品名称，且旁白需说明不是电话会现场。",
+        "visual_qa": {"reviewed": true, "content": "美团技术团队 LongCat-2.0 正式开源产品视觉", "accuracy": "对应报道中提及的美团 AI 产品，不冒充王兴现场", "duplicate_or_wrong": "非重复、非人物错配", "watermark_text": "无可见媒体水印", "clarity": "横版文字清晰", "orientation": "横版，适合主图"}
+      }],
+      "rejected_visuals": []
+    },
+    {
+      "story_id": "changxin-technology-h1-earnings",
+      "title_zh": "长鑫科技披露 2026 年上半年业绩，归母净利润 776.05 亿元",
+      "event_at": "2026-08-28",
+      "content_published_at": "2026-08-28T18:05:54+08:00",
+      "heat": {"status": "public_signal_only", "account_coverage": 0, "accounts": [], "interactions": null, "public_signals": [{"name": "IT之家", "url": "https://www.ithome.com/0/995/756.htm", "expected_text": "长鑫科技 2026 年上半年归母净利润 776.05 亿元", "published_at": "2026-08-28T18:05:54+08:00", "signal_kind": "reliable_publication", "use": "8月28日公开发现信号"}]},
+      "evidence_status": "confirmed_two_reliable",
+      "confirmed_facts": ["长鑫科技 8 月 28 日披露 2026 年半年度业绩报告。", "报道显示，上半年营收 1503.1 亿元、归母净利润 776.05 亿元，同比扭亏为盈。"],
+      "pending_verification": ["业绩结构、一次性因素与后续存储价格走势需结合完整报告和后续公告解读。"],
+      "claims_to_verify": ["不要把同比扭亏直接归因于单一技术或单一客户。"],
+      "do_not_claim": ["不得把报道中的表格截图当成投资建议。", "不得补写未经来源支持的全球排名、产能或客户信息。"],
+      "fact_sources": [
+        {"name": "IT之家", "url": "https://www.ithome.com/0/995/756.htm", "expected_text": "归母净利润 776.05", "use": "业绩数字交叉核对"},
+        {"name": "央广网", "url": "https://finance.cnr.cn/ycbd/20260828/t20260828_527796915.shtml", "expected_text": "776.05", "use": "独立可靠报道交叉核对"}
+      ],
+      "user_value": "了解存储产业公司披露的经营结果与产品趋势是不同层次的信息。",
+      "editorial_angle": "先交代财报已披露和核心数字，再把产业解释与投资判断分开。",
+      "visual_intent": "使用半年报关键财务表格，保留数字和来源水印。",
+      "images": [{
+        "image_url": "https://img.ithome.com/newsuploadfiles/2026/8/be08a904-33fe-48b7-bf60-8d7b89003a2f.png?x-bce-process=image/format,f_auto",
+        "source_article_url": "https://www.ithome.com/0/995/756.htm", "source_name": "IT之家", "visual_kind": "financial_report_visual",
+        "subject_match": true, "event_match": true, "visual_usable": true,
+        "selection_reason": "半年报主要财务数据表直接呈现报道所述营收、净利润等数字，事件匹配。",
+        "attribution_text": "IT之家报道所附半年报表格；画面带 IT之家水印。", "composition_hint": "竖版保留“主要财务数据”表头和关键数值。", "crop_hint": "不得裁掉单位、表头、来源水印或关键行。",
+        "visual_qa": {"reviewed": true, "content": "长鑫科技半年报主要财务数据表格", "accuracy": "精准对应半年度业绩披露", "duplicate_or_wrong": "非重复、非错误公司", "watermark_text": "右上角可见 IT之家水印", "clarity": "原图表格与关键数字清晰", "orientation": "竖版长图，适合资料页或分段展示"}
+      }],
+      "rejected_visuals": []
+    },
+    {
+      "story_id": "ndrc-integrated-circuit-policy-signal",
+      "title_zh": "发改委称将全链条推动集成电路关键核心技术攻关",
+      "event_at": "2026-08-28",
+      "content_published_at": "2026-08-28T10:28:57+08:00",
+      "heat": {"status": "public_signal_only", "account_coverage": 0, "accounts": [], "interactions": null, "public_signals": [{"name": "IT之家", "url": "https://www.ithome.com/0/995/427.htm", "expected_text": "全链条推动集成电路关键核心技术攻关取得决定性突破", "published_at": "2026-08-28T10:28:57+08:00", "signal_kind": "reliable_publication", "use": "8月28日公开发现信号"}]},
+      "evidence_status": "confirmed_two_reliable",
+      "confirmed_facts": ["国家发展改革委在 8 月份新闻发布会中介绍集成电路产业发展情况。", "报道转述下一步将全链条推动集成电路关键核心技术攻关取得决定性突破。"],
+      "pending_verification": ["具体项目、时间表和政策工具应以后续正式文件为准。"],
+      "claims_to_verify": ["不要把政策目标写成已经完成的产业结果。"],
+      "do_not_claim": ["不得扩写为具体企业获得政策支持。", "不得以泛化芯片图冒充本次新闻发布会现场。"],
+      "fact_sources": [
+        {"name": "IT之家", "url": "https://www.ithome.com/0/995/427.htm", "expected_text": "国家发展改革委今日举行 8 月份新闻发布会", "use": "发布会内容交叉核对"},
+        {"name": "央广网", "url": "https://news.cnr.cn/native/gd/20260828/t20260828_527795976.shtml", "expected_text": "国家发展改革委今天表示", "use": "独立可靠报道交叉核对"}
+      ],
+      "user_value": "区分政策方向、产业数据和企业具体进展，避免把宏观表态误读成单一公司利好。",
+      "editorial_angle": "以发布会原话为边界，解释产业链协同而不预测个股。",
+      "visual_intent": "无准确原图时不补泛化芯片或会议照片。",
+      "images": [],
+      "rejected_visuals": ["来源页未见可独立核对的发布会现场原图；拒绝泛化芯片和非本次会议照片。"]
+    },
+    {
+      "story_id": "harmonyos-7-0-0-105-update",
+      "title_zh": "HarmonyOS 7.0.0.105 SP6 推送，优化桌面和图库体验",
+      "event_at": "2026-08-28",
+      "content_published_at": "2026-08-28T23:37:50+08:00",
+      "heat": {"status": "public_signal_only", "account_coverage": 0, "accounts": [], "interactions": null, "public_signals": [{"name": "IT之家", "url": "https://www.ithome.com/0/995/815.htm", "expected_text": "华为鸿蒙 HarmonyOS 7.0.0.105 版本开推", "published_at": "2026-08-28T23:37:50+08:00", "signal_kind": "reliable_publication", "use": "8月28日公开发现信号"}]},
+      "evidence_status": "research",
+      "confirmed_facts": [],
+      "pending_verification": ["不同机型的实际覆盖范围、安装包大小与分批推送节奏。"],
+      "claims_to_verify": ["需以华为设备端更新或官方公告确认各机型可获得性。"],
+      "do_not_claim": ["不得把截图中的 7.78 GB 视为所有机型的统一包体大小。", "不得扩写未列明的新功能。"],
+      "fact_sources": [{"name": "IT之家", "url": "https://www.ithome.com/0/995/815.htm", "expected_text": "HarmonyOS 7.0.0.105 SP6", "use": "公开报道与版本画面"}],
+      "user_value": "用具体版本号和更新项判断自己设备是否值得等待或检查更新。",
+      "editorial_angle": "先说明这是单一可靠来源报道，提醒分批推送和机型差异。",
+      "visual_intent": "使用带版本号的更新页截图，不把它误说成社交或短视频截图。",
+      "images": [{
+        "image_url": "https://img.ithome.com/newsuploadfiles/2026/8/51471f3e-9350-46b6-a947-99a47ed8977e.jpg@s_2,w_820,h_2571",
+        "source_article_url": "https://www.ithome.com/0/995/815.htm", "source_name": "IT之家", "visual_kind": "feature_demo",
+        "subject_match": true, "event_match": true, "visual_usable": true,
+        "selection_reason": "更新页清晰显示 HarmonyOS 7.0.0.105 SP6 版本与具体优化项目，直接对应报道。",
+        "attribution_text": "IT之家报道配图；画面带 IT之家水印。", "composition_hint": "竖版保留版本号和更新项目。", "crop_hint": "不得裁掉版本号、功能条目或 IT之家水印。",
+        "visual_qa": {"reviewed": true, "content": "HarmonyOS 7.0.0.105 SP6 软件更新页面", "accuracy": "精准对应版本更新报道", "duplicate_or_wrong": "非重复、非社交UI、非错误版本", "watermark_text": "版本卡片上可见 IT之家水印", "clarity": "版本号和条目清晰", "orientation": "竖版长图，适合资料页或分段展示"}
+      }],
+      "rejected_visuals": []
+    },
+    {
+      "story_id": "codex-persistent-mode-testing",
+      "title_zh": "OpenAI 被报道测试 Codex“持久模式”，尚未正式发布",
+      "event_at": "2026-08-27",
+      "content_published_at": "2026-08-28T23:53:34+08:00",
+      "heat": {"status": "public_signal_only", "account_coverage": 0, "accounts": [], "interactions": null, "public_signals": [{"name": "IT之家", "url": "https://www.ithome.com/0/995/818.htm", "expected_text": "OpenAI 开发“持久模式”智能体", "published_at": "2026-08-28T23:53:34+08:00", "signal_kind": "reliable_publication", "use": "8月28日中文公开发现信号"}]},
+      "evidence_status": "confirmed_two_reliable",
+      "confirmed_facts": ["WIRED 报道称，OpenAI 正在测试 Codex 的 Persistent mode。", "OpenAI 发言人向 WIRED 确认正在测试该功能，但没有近期上线计划。"],
+      "pending_verification": ["功能最终名称、产品覆盖范围、权限和上线时间。"],
+      "claims_to_verify": ["持久模式尚未广泛开放，不能把测试代码当作已发布能力。"],
+      "do_not_claim": ["不得称功能已上线或默认可用。", "不得使用旧版 Codex 初始引导界面冒充持久模式。"],
+      "fact_sources": [
+        {"name": "IT之家", "url": "https://www.ithome.com/0/995/818.htm", "expected_text": "持久模式目前仍处于测试阶段", "use": "中文报道交叉核对"},
+        {"name": "WIRED", "url": "https://www.wired.com/story/openai-is-developing-a-persistent-ai-agent/", "expected_text": "Persistent mode", "use": "原始报道与公司回应"}
+      ],
+      "user_value": "理解“被测试”与“已发布”之间的产品状态差异，并关注长时任务的权限边界。",
+      "editorial_angle": "将可验证事实限定在测试状态和无近期发布时间表，不推演未公开能力。",
+      "visual_intent": "没有与持久模式本身准确对应的产品视觉时保持无图。",
+      "images": [],
+      "rejected_visuals": ["IT之家候选图为旧版 Codex 初始引导界面，不是持久模式，已拒绝。"]
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "counting": "non_whitespace_characters",
+  "required_files": {
+    "AGENTS.md": 8000,
+    "docs/handoff/README.md": 1200,
+    "docs/handoff/CURRENT_STATUS.md": 3000,
+    "docs/handoff/PRODUCT_RULES.md": 5000,
+    "docs/handoff/DECISIONS.md": 6000,
+    "docs/handoff/CODE_MAP.md": 5000,
+    "docs/handoff/RUNTIME_SAFETY.md": 5000
+  },
+  "default_read_set": [
+    "AGENTS.md"
+  ],
+  "project_task_read_set": [
+    "docs/handoff/README.md",
+    "docs/handoff/CURRENT_STATUS.md"
+  ],
+  "forbidden_context_inputs": [
+    "docs/项目开发过程文档.md"
+  ],
+  "current_task": "docs/tasks/2026-09-12-material-replication.md"
+}

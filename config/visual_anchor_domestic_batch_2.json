@@ -1,0 +1,38 @@
+{
+  "schema_version": "1.0",
+  "purpose": "2026-08-28 国内新闻视觉素材真实验收 batch 2/2；事实只来自列出的来源。",
+  "stories": [
+    {
+      "story_id": "beijing-robot-events-2026",
+      "target_date": "2026-08-28",
+      "title_zh": "北京机器人大会和世界人形机器人运动会举行",
+      "summary_zh": "2026 世界机器人大会与第二届世界人形机器人运动会是两个不同活动；北京市政府页面所引报告称，2026 年上半年中国人形机器人出货量超过 4 万台、全球占比提升至 97%。",
+      "confirmation_status": "official_primary_source",
+      "category": "robot_event",
+      "visual_subject": "2026 世界机器人大会和第二届世界人形机器人运动会",
+      "subject_aliases": ["2026世界机器人大会", "世界机器人大会现场", "第二届世界人形机器人运动会", "人形机器人运动会"],
+      "query_terms": ["2026世界机器人大会现场", "第二届世界人形机器人运动会", "北京机器人大会"],
+      "negative_terms": ["国外机器人赛事", "stock robot", "库存图", "share_weixin", "二维码", "政府 Logo"],
+      "visual_subscenes": [
+        {"scene_id": "conference", "terms": ["2026世界机器人大会", "世界机器人大会现场"]},
+        {"scene_id": "interaction", "terms": ["观众与机器人互动", "观众在展位前"]},
+        {"scene_id": "sports", "terms": ["第二届世界人形机器人运动会", "人形机器人运动会"]}
+      ],
+      "region": "CN-BJ",
+      "official_sources": [
+        {
+          "publisher": "北京市人民政府门户网站",
+          "role": "世界机器人大会官方政务页面",
+          "url": "https://www.beijing.gov.cn/fuwu/lqfw/gggs/202608/t20260826_4838131.html",
+          "attribution_text": "页面现场及互动照片署名：张磊 摄"
+        },
+        {
+          "publisher": "北京市体育局／首都之窗",
+          "role": "第二届世界人形机器人运动会赛事页面",
+          "url": "https://www.beijing.gov.cn/fwcj/calendar/tyss/6a7098af21f2a033ca99bc8c.html",
+          "visual_context": "第二届世界人形机器人运动会赛事图"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,1653 @@
+"""Visual proxy metrics and deterministic script/material replica selection.
+
+All ordering is deterministic: ties break by ``(-heat_score, -duration,
+video_id)``.  External effects (download, ffprobe, ASR, OCR, face detection)
+are injected through :class:`ReplicationDeps` so the selection logic is
+testable offline.
+"""
+
+from __future__ import annotations
+
+import inspect
+import re
+import statistics
+import subprocess
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from .face_metrics import (
+    FACE_FREE,
+    FACE_HEAVY,
+    FACE_LOW,
+    FACE_UNAVAILABLE,
+    face_settings,
+    imread_unicode,
+    truncated_face_class,
+)
+from .materials import MediaTooLargeError
+from .replication_candidates import Candidate
+from .replication_validation import (
+    record_validation,
+    validate_candidate,
+    validation_enabled,
+    validation_reason,
+)
+
+if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
+    from .replication_pipeline import ReplicationDeps
+
+
+MEDIA_PROCESS_TIMEOUT_SECONDS = 180
+_FACE_PRIORITY = {FACE_FREE: 0, FACE_LOW: 1, FACE_HEAVY: 2, FACE_UNAVAILABLE: 3}
+
+
+def _run_media_process(command: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(command, capture_output=True, text=True, encoding="utf-8", check=False, timeout=MEDIA_PROCESS_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(command, 124, "", "media process timed out")
+
+
+def material_replication_settings(config: dict[str, Any]) -> dict[str, Any]:
+    return (config.get("jobs") or {}).get("material_replication") or {}
+
+
+def script_settings(config: dict[str, Any]) -> dict[str, Any]:
+    return material_replication_settings(config).get("script_replica") or {}
+
+
+def material_settings(config: dict[str, Any]) -> dict[str, Any]:
+    return material_replication_settings(config).get("material_replica") or {}
+
+
+def validate_probe(probe: dict[str, Any] | None) -> tuple[bool, str]:
+    """Return ``(ok, reason)`` for a ffprobe payload.
+
+    A downloaded file that lacks a decodable video stream (audio-only or an
+    error payload) must be rejected before OCR/ASR/face work runs, otherwise it
+    only surfaces much later as an opaque ffmpeg error ("Output file does not
+    contain any stream").
+    """
+    if not probe:
+        return False, "无 ffprobe 结果"
+    if not probe.get("width") or not probe.get("height"):
+        return False, "下载文件无视频流（ffprobe 未返回画面尺寸）"
+    if float(probe.get("duration_seconds") or 0) <= 0:
+        return False, "视频时长无效"
+    return True, ""
+
+
+# Douyin image-album posts carry no video stream at all.  Their ``video_download_url``
+# is the post's background music, so downloading yields an MP3 (ID3) file that can only
+# be rejected after the fact.  Skip them up front and report an actionable reason.
+NON_VIDEO_AWEME_TYPES = frozenset({"68"})
+
+
+def is_video_candidate(candidate: Candidate) -> tuple[bool, str]:
+    """Return ``(usable, reason)`` for whether a candidate can yield a video stream."""
+    aweme_type = str(getattr(candidate, "aweme_type", "") or "").strip()
+    if aweme_type in NON_VIDEO_AWEME_TYPES:
+        return False, f"图文作品（aweme_type={aweme_type}），无视频流"
+    if getattr(candidate, "media_is_audio", False):
+        return False, "下载地址指向音频（图文帖配乐），无视频流"
+    return True, ""
+
+
+# --------------------------------------------------------------------------- #
+# Visual-proxy thresholds (P2/P3)
+#
+# These are two *different dimensions* and must never be compared to each other:
+#
+# * ``motion_delta_threshold`` -- a per-frame-pair gray delta (0~1).  A single
+#   adjacent-frame pair "moved" when its mean abs-diff reaches this value.
+# * ``min_motion_frame_ratio`` -- a *fraction of frame pairs* (0~1).  A clip has
+#   enough motion when at least this fraction of its sampled pairs moved.
+#
+# The old config key ``motion_threshold: 0.30`` conflated the two (a ratio was
+# compared against a per-pair delta), so the motion branch was dead code.  It is
+# intentionally **not** mapped onto either new key: 0.30 has no correct meaning
+# here.  The defaults below were calibrated on the 46 real Douyin clips / 3493
+# adjacent-frame pairs of the 9.12 corpus (per-pair gray delta: min 0.00, p25
+# 0.041, median 0.095, p90 0.265, max 0.939).  ``motion_delta_threshold=0.02``
+# sits just under the 5th percentile (0.008) x median band -- above codec/denoise
+# jitter yet below genuine motion; ``min_motion_frame_ratio=0.20`` demands that a
+# fifth of the pairs actually moved.  At (0.02, 0.20) the corpus's per-video
+# moving-pair ratio has median 0.96 / p10 0.71, and only 2/46 clips fall below
+# the floor -- i.e. near-static clips fail while real clips pass comfortably.
+# --------------------------------------------------------------------------- #
+DEFAULT_MOTION_DELTA_THRESHOLD = 0.02
+DEFAULT_MIN_MOTION_FRAME_RATIO = 0.20
+DEFAULT_MAX_OCR_COVERAGE = 0.40
+
+# --------------------------------------------------------------------------- #
+# Single video cache root (P1a)
+#
+# The script chain, the material chain and the download-only loop must all cache
+# a downloaded video under the *same* ``<media_root>/<REPLICATION_VIDEO_SUBDIR>/
+# <video_id>.mp4``.  When they used different sub-roots (``script`` vs
+# ``material``) the very same video was fetched once per chain -- real, measured
+# waste (the 9.13 run pulled two ids twice: 33,998,762 B, ~26% of all traffic).
+# Sharing the root makes the second chain a genuine cache hit: the file already
+# exists, ``download_video`` returns before touching the body, and
+# :func:`measure_transferred_bytes` charges 0 wire bytes while the idempotent
+# delivered ledger still counts the one file (see :meth:`DownloadBudget.select`).
+#
+# The name is deliberately ``material`` (not a fresh ``video``): the material
+# chain and download-only already used it and the persistent store is keyed on
+# it, so reusing it also lets the next run *reuse* the already-downloaded media
+# instead of orphaning it.  Stage-specific *scratch* keeps its own sub-dirs
+# (``cache_root/script`` vs ``cache_root/material``) -- only the source ``.mp4``
+# is shared.
+# --------------------------------------------------------------------------- #
+REPLICATION_VIDEO_SUBDIR = "material"
+
+
+def visual_verdict(
+    motion_frame_ratio: float,
+    frames_with_text: int | None,
+    frames_scanned: int,
+    *,
+    motion_delta_threshold: float = DEFAULT_MOTION_DELTA_THRESHOLD,
+    min_motion_frame_ratio: float = DEFAULT_MIN_MOTION_FRAME_RATIO,
+    max_ocr_coverage: float = DEFAULT_MAX_OCR_COVERAGE,
+) -> dict[str, Any]:
+    """Pure visual-proxy decision (no media IO) -- trivially unit-testable.
+
+    Two independent, dimensionally-correct gates decide ``visual_ok``:
+
+    * ``motion_ok``  = ``motion_frame_ratio >= min_motion_frame_ratio``;
+    * ``ocr_ok``     = the fraction of OCR'd frames that carried text is
+      ``<= max_ocr_coverage``.  When the OCR frame count is unknown
+      (``frames_with_text is None`` or ``frames_scanned == 0``) the text signal
+      is **unmeasurable**: ``ocr_ok`` is ``None`` and the text gate is *skipped*
+      rather than passed, so it can neither rescue nor reject a clip -- the
+      verdict then rests on motion alone.  A ratio is never fabricated from the
+      deduped text catalogue.
+
+    ``visual_ok = motion_ok or ocr_ok`` (with an unmeasurable ``ocr_ok`` treated
+    as "no evidence either way", i.e. ``visual_ok = motion_ok``).
+
+    ``reason`` names the criterion/criteria that failed (运动不足 / 文字过多 /
+    OCR 覆盖不可测) so the caller can record *why* a clip was dropped.
+    """
+    ratio = float(motion_frame_ratio or 0.0)
+    scanned = int(frames_scanned or 0)
+    motion_ok = ratio >= float(min_motion_frame_ratio)
+    ocr_measurable = frames_with_text is not None and scanned > 0
+    ocr_ok: bool | None
+    if ocr_measurable:
+        ocr_ratio = min(1.0, max(0.0, int(frames_with_text) / scanned))
+        ocr_ok = ocr_ratio <= float(max_ocr_coverage)
+        visual_ok = bool(motion_ok or ocr_ok)
+    else:
+        ocr_ratio = 0.0
+        ocr_ok = None  # unmeasurable: skip the text gate, never fake a ratio
+        visual_ok = bool(motion_ok)
+    reasons: list[str] = []
+    if not motion_ok:
+        reasons.append(
+            f"运动不足（帧间变化≥{float(motion_delta_threshold):g} 的帧对占比 "
+            f"{ratio:.2f} < {float(min_motion_frame_ratio):g}）"
+        )
+    if ocr_ok is False:
+        reasons.append(f"文字过多（有字帧占比 {ocr_ratio:.2f} > {float(max_ocr_coverage):g}）")
+    if not ocr_measurable:
+        reasons.append("OCR 覆盖不可测（缺有字帧计数）")
+    return {
+        "motion_ok": motion_ok,
+        "ocr_ok": ocr_ok,
+        "ocr_measurable": ocr_measurable,
+        "ocr_text_frame_ratio": round(ocr_ratio, 6),
+        "visual_ok": visual_ok,
+        # A *reject* reason: empty for a clip that passed (a criterion can fail
+        # yet still be rescued by the other branch -- that is not a rejection).
+        "reason": "、".join(reasons) if not visual_ok else "",
+    }
+
+
+@dataclass(slots=True)
+class VisualMetrics:
+    sampled_frames: int = 0
+    motion_frame_ratio: float = 0.0
+    ocr_text_frame_ratio: float = 0.0
+    visual_ok: bool = False
+    cache_hit: bool = False
+    # --- additive fields (P2/P3): the two signals' thresholds and verdicts ----
+    # Kept so the readme / process data can show *which* criterion decided the
+    # verdict, instead of an opaque boolean.
+    motion_delta_threshold: float = 0.0
+    min_motion_frame_ratio: float = 0.0
+    max_ocr_coverage: float = 0.0
+    ocr_measurable: bool = True
+    motion_ok: bool = False
+    ocr_ok: bool | None = None
+    reject_reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def sort_candidates(candidates: list[Candidate]) -> list[Candidate]:
+    """Deterministic candidate order: heat desc, duration desc, video_id asc."""
+    return sorted(candidates, key=lambda item: (-item.heat_score, -item.duration_seconds, item.video_id))
+
+
+def pool_heat_median(candidates: list[Candidate]) -> float:
+    if not candidates:
+        return 0.0
+    return float(statistics.median(candidate.heat_score for candidate in candidates))
+
+
+def script_candidate_pool(candidates: list[Candidate], config: dict[str, Any]) -> list[Candidate]:
+    """Top-heat, in-duration candidates eligible for the script replica."""
+    settings = script_settings(config)
+    ordered = sort_candidates(candidates)
+    if not ordered:
+        return []
+    top_ratio = float(settings.get("top_ratio") or 0.10)
+    min_top = int(settings.get("min_top") or 5)
+    cutoff = max(min_top, _ceil(len(ordered) * top_ratio))
+    min_seconds = float(settings.get("min_seconds") or 30)
+    max_seconds = float(settings.get("max_seconds") or 300)
+    pool = [candidate for candidate in ordered[:cutoff] if min_seconds <= candidate.duration_seconds <= max_seconds]
+    if not pool:
+        # Duration may be unknown from search metadata; keep heat-qualified rows.
+        pool = [candidate for candidate in ordered[:cutoff] if candidate.duration_seconds <= 0]
+    return pool
+
+
+def _ceil(value: float) -> int:
+    import math
+    return int(math.ceil(value))
+
+
+def evaluate_script_transcript(transcript: dict[str, Any] | None, duration: float, config: dict[str, Any]) -> tuple[bool, str]:
+    """Return ``(ok, reason)`` for the script-replica speech density gate."""
+    settings = script_settings(config)
+    min_chars = int(settings.get("min_chars") or 150)
+    min_cps = float(settings.get("min_chars_per_second") or 1.2)
+    if not transcript:
+        return False, "未获得转写结果"
+    status = str(transcript.get("status") or "unknown")
+    if status != "success":
+        detail = str(transcript.get("error") or "").strip()[:120]
+        suffix = f"（{detail}）" if detail else "，无有效口播"
+        return False, f"ASR 状态 {status}{suffix}"
+    text = re.sub(r"\s+", "", str(transcript.get("text") or ""))
+    chars = len(text)
+    if chars < min_chars:
+        return False, f"口播字数 {chars} 低于 {min_chars}"
+    chars_per_second = chars / max(1.0, float(duration))
+    if chars_per_second < min_cps:
+        return False, f"口播密度 {chars_per_second:.2f} 低于 {min_cps}"
+    return True, ""
+
+
+def material_candidate_pool(candidates: list[Candidate], config: dict[str, Any]) -> tuple[list[Candidate], float]:
+    """Candidates eligible for material selection, in deterministic order.
+
+    Heat is used to *order* candidates, not to discard them.  Whether a clip is usable
+    as footage (no face, moving picture, little speech) is largely independent of how
+    popular the post is, whereas a half-pool median cut removes exactly the mid-tier
+    creators who tend to publish hands-on footage.  ``heat_gate_percentile`` therefore
+    defaults to 0.0 (keep every candidate); raise it to reintroduce a heat floor.
+    """
+    median = pool_heat_median(candidates)
+    percentile = float(material_settings(config).get("heat_gate_percentile") or 0.0)
+    if percentile <= 0.0 or not candidates:
+        return sort_candidates(list(candidates)), median
+    values = sorted(candidate.heat_score for candidate in candidates)
+    index = min(len(values) - 1, max(0, int(round((len(values) - 1) * percentile))))
+    threshold = values[index]
+    eligible = [candidate for candidate in candidates if candidate.heat_score >= threshold]
+    return sort_candidates(eligible), median
+
+
+def prefilter_settings(config: dict[str, Any]) -> dict[str, Any]:
+    """The ``jobs.material_replication.prefilter`` block (``{}`` when absent)."""
+    return material_replication_settings(config).get("prefilter") or {}
+
+
+def prefilter_exclude_terms(config: dict[str, Any]) -> list[str]:
+    """The effective exclude terms for the pre-download gate.
+
+    Reads ``jobs.material_replication.prefilter.exclude_terms`` and returns the
+    terms as written (trimmed, de-duplicated case-insensitively, original order
+    preserved) so the audit artifacts can show *exactly* what was applied.  There
+    is deliberately **no global default** -- the block defaults to ``[]`` -- so a
+    blank config never silently drops candidates.  A bare string is accepted and
+    treated as a one-element list, mirroring the CLI's repeatable ``--exclude-term``.
+    """
+    raw = prefilter_settings(config).get("exclude_terms") or []
+    if isinstance(raw, str):
+        raw = [raw]
+    terms: list[str] = []
+    seen: set[str] = set()
+    for value in raw:
+        text = str(value or "").strip()
+        key = text.casefold()
+        if text and key not in seen:
+            seen.add(key)
+            terms.append(text)
+    return terms
+
+
+def prefilter_active(config: dict[str, Any]) -> bool:
+    """Whether the pre-download gate will drop anything at all.
+
+    ``True`` when the duration/heat gate is enabled **or** at least one exclude
+    term is effective.  The exclude gate is deliberately independent of
+    ``prefilter.enabled``: a term the user explicitly supplied (config or
+    ``--exclude-term``) must never be silently dropped just because the
+    duration/heat switches happen to be off.  With the shipped ``exclude_terms:
+    []`` and ``enabled: false`` the gate is inert, so the "three switches off =>
+    no layer artifact" contract still holds by default.
+    """
+    return bool(prefilter_settings(config).get("enabled", False)) or bool(prefilter_exclude_terms(config))
+
+
+def prefilter_drop_non_video(config: dict[str, Any]) -> bool:
+    """Whether the media-type gate drops non-video posts (default ``True``).
+
+    This gate is **governed by** ``prefilter.enabled`` (unlike ``exclude_terms``):
+    with the shipped ``enabled: false`` the whole prefilter is inert and the
+    "no layer artifact + behavioural equivalence" contract is preserved
+    exactly.  Non-video posts (image albums, ``aweme_type=68``) are already
+    skipped by the download loop, so turning the switch off only changes the
+    *pool composition* the ordering sees -- never the delivered result.  Reset it
+    to ``False`` to restore the pre-change pool exactly.
+    """
+    return bool(prefilter_settings(config).get("drop_non_video", True))
+
+
+# Distinct ``pre_*`` stages so a pre-download rejection can never be confused
+# with a downstream gate that shares a similar meaning (``duration`` / ``pool``).
+_PREFILTER_EXCLUDE_STAGE = "pre_exclude"
+_PREFILTER_MEDIA_TYPE_STAGE = "pre_media_type"
+_PREFILTER_DURATION_STAGE = "pre_duration"
+_PREFILTER_HEAT_STAGE = "pre_heat"
+
+
+def _prefilter_reject(candidate: Candidate, stage: str, reason: str) -> dict[str, Any]:
+    """A rejection record in the project-wide ``unmet`` shape, fit for review.
+
+    Carries the metadata the gate actually saw (duration / heat / aweme_type /
+    title / author) so a reader can tell whether a candidate was wrongly
+    dropped.  ``aweme_type`` is included for every stage because it is cheap and
+    makes the media-type gate's verdict auditable without a second lookup.
+    """
+    return {
+        "video_id": candidate.video_id,
+        "stage": stage,
+        "reason": reason,
+        "aweme_type": str(getattr(candidate, "aweme_type", "") or ""),
+        "duration_seconds": round(float(candidate.duration_seconds or 0), 3),
+        "heat_score": round(float(candidate.heat_score or 0.0), 6),
+        "title": candidate.title,
+        "author": candidate.author,
+    }
+
+
+def _prefilter_heat_threshold(candidates: list[Candidate], percentile: float) -> float | None:
+    """Heat floor for the prefilter, or ``None`` when the gate is off.
+
+    Fully independent of ``material_replica.heat_gate_percentile``: this is an
+    explicit opt-in download-time floor, not the material-pool ordering floor.
+    """
+    if percentile <= 0.0 or not candidates:
+        return None
+    values = sorted(candidate.heat_score for candidate in candidates)
+    index = min(len(values) - 1, max(0, int(round((len(values) - 1) * percentile))))
+    return values[index]
+
+
+def prefilter_candidates(
+    candidates: list[Candidate], config: dict[str, Any]
+) -> tuple[list[Candidate], list[dict[str, Any]]]:
+    """Metadata-only gate applied once, before *any* download.
+
+    Pure function: no IO, no network.  A candidate is dropped purely from the
+    search metadata that was already collected -- a downloaded file is never
+    needed to know its length, so the pipeline should not have to spend the
+    bandwidth before it can apply a duration window.
+
+    Three gates are supported, evaluated in this order:
+
+    * the **exclude-term gate** (``exclude_terms``): the title, casefolded, is
+      dropped when it contains *any* exclude term as a substring -- a blunt
+      "keep these out of the pool" switch for content the theme must never use.
+      This gate is **independent of ``enabled``**: a term the user explicitly
+      supplied must never be silently dropped just because the duration/heat
+      switches are off.  It runs first because it is the only gate driven by an
+      explicit user input, so its attribution must be the one a reader sees;
+    * the **media-type gate** (``drop_non_video``, default ``True``, runs only
+      when ``enabled`` is true): reuses :func:`is_video_candidate` to drop posts
+      that carry no video stream at all (Douyin image albums, ``aweme_type=68``,
+      or an audio download address).  A hard validity fact, so it is judged
+      before the window gates -- there is no point asking whether a 0 s image
+      album is "in duration";
+    * the **duration window** (``min_seconds`` / ``max_seconds``), where
+      ``duration_seconds <= 0`` (metadata missing) is *kept* when
+      ``allow_unknown_duration`` is true, mirroring ``script_candidate_pool`` --
+      runs only when ``enabled`` is true;
+    * the optional **heat floor** (``heat_gate_percentile``), defaulting to
+      ``0.0`` (off) and decoupled from ``material_replica.heat_gate_percentile``
+      -- runs only when ``enabled`` is true.
+
+    Returns ``(passed, rejected)``.  Only when the duration/heat gate is off
+    **and** no exclude term is effective is the input list returned untouched
+    with an empty rejection list, so a caller with the shipped ``enabled: false``
+    and ``exclude_terms: []`` keeps its pre-change behaviour exactly.
+    """
+    settings = prefilter_settings(config)
+    enabled = bool(settings.get("enabled", False))
+    exclude_terms = prefilter_exclude_terms(config)
+    if not enabled and not exclude_terms:
+        return list(candidates), []
+
+    min_seconds = float(settings.get("min_seconds") or 0)
+    max_seconds = float(settings.get("max_seconds") or 0)
+    percentile = float(settings.get("heat_gate_percentile") or 0.0)
+    allow_unknown = bool(settings.get("allow_unknown_duration", True))
+    drop_non_video = enabled and prefilter_drop_non_video(config)
+    threshold = _prefilter_heat_threshold(candidates, percentile) if enabled else None
+
+    passed: list[Candidate] = []
+    rejected: list[dict[str, Any]] = []
+    for candidate in candidates:
+        if exclude_terms:
+            title_folded = str(candidate.title or "").casefold()
+            matched = next((term for term in exclude_terms if term.casefold() in title_folded), None)
+            if matched is not None:
+                rejected.append(
+                    _prefilter_reject(candidate, _PREFILTER_EXCLUDE_STAGE, f"标题命中排除词「{matched}」")
+                )
+                continue
+        if not enabled:
+            # Exclude-only mode: the duration/heat windows are switched off, so
+            # every surviving candidate passes untouched.
+            passed.append(candidate)
+            continue
+        if drop_non_video:
+            usable, media_reason = is_video_candidate(candidate)
+            if not usable:
+                rejected.append(
+                    _prefilter_reject(candidate, _PREFILTER_MEDIA_TYPE_STAGE, media_reason)
+                )
+                continue
+        duration = float(candidate.duration_seconds or 0)
+        if duration <= 0:
+            # Metadata may simply be missing; do not punish a candidate for it.
+            if not allow_unknown:
+                rejected.append(
+                    _prefilter_reject(
+                        candidate, _PREFILTER_DURATION_STAGE, "元数据缺失时长，且未允许未知时长放行"
+                    )
+                )
+                continue
+        elif (min_seconds > 0 and duration < min_seconds) or (max_seconds > 0 and duration > max_seconds):
+            lower = f"{min_seconds:.0f}s" if min_seconds > 0 else "不限"
+            upper = f"{max_seconds:.0f}s" if max_seconds > 0 else "不限"
+            rejected.append(
+                _prefilter_reject(
+                    candidate, _PREFILTER_DURATION_STAGE, f"时长 {duration:.0f}s 不在 {lower}~{upper}"
+                )
+            )
+            continue
+        if threshold is not None and candidate.heat_score < threshold:
+            rejected.append(
+                _prefilter_reject(
+                    candidate,
+                    _PREFILTER_HEAT_STAGE,
+                    f"热度 {candidate.heat_score:.3f} 低于预筛下限 {threshold:.3f}",
+                )
+            )
+            continue
+        passed.append(candidate)
+    return passed, rejected
+
+
+def measured_duration_window_reject(
+    measured: float, config: dict[str, Any], *, metadata_duration: float = 0.0
+) -> tuple[bool, str]:
+    """Post-download half of the "一个窗口、两处执行" duration gate.
+
+    The prefilter window (``min_seconds`` / ``max_seconds``) cannot judge a
+    candidate whose metadata carries no duration, so such a candidate passes the
+    *pre*-download gate (``allow_unknown_duration``).  Once the file is
+    downloaded its real length is known, so the **same** window is executed
+    again against the measured duration -- one config, two checkpoints.  A file
+    outside the window is treated exactly like a validation failure: it is not
+    delivered, does not charge the budget, and the loop moves on.
+
+    Returns ``(reject, reason)``.  No-op when the prefilter is disabled, when the
+    metadata already carried a duration (the pre-download gate already judged
+    it), or when the window is open on both sides.
+    """
+    settings = prefilter_settings(config)
+    if not bool(settings.get("enabled", False)):
+        return False, ""
+    if float(metadata_duration or 0) > 0:
+        return False, ""
+    min_seconds = float(settings.get("min_seconds") or 0)
+    max_seconds = float(settings.get("max_seconds") or 0)
+    if (min_seconds <= 0 and max_seconds <= 0) or measured <= 0:
+        return False, ""
+    if (min_seconds > 0 and measured < min_seconds) or (max_seconds > 0 and measured > max_seconds):
+        lower = f"{min_seconds:.0f}s" if min_seconds > 0 else "不限"
+        upper = f"{max_seconds:.0f}s" if max_seconds > 0 else "不限"
+        return (
+            True,
+            f"实测时长 {measured:.0f}s 不在下载前预筛窗口 {lower}~{upper}"
+            f"（元数据无时长，下载后按实测判定）",
+        )
+    return False, ""
+
+
+def download_budget_settings(config: dict[str, Any]) -> dict[str, Any]:
+    """The ``jobs.material_replication.download_budget`` block (``{}`` absent)."""
+    return material_replication_settings(config).get("download_budget") or {}
+
+
+# Ranking key = theme relevance -> heat -> video_id.  Visual quality is the
+# user's *top* priority, but it is physically undecidable before a decode, so
+# it is deliberately excluded from the pre-download order and this limitation
+# is stated in the delivery instead of being silently glossed over.
+RANKING_LIMITATION_NOTE = (
+    "下载前无法评估画面质量（需解码帧才能判断），故本期排序为：题材相关度 → 热度 → video_id；"
+    "画面质量留待下载后的校验/筛选阶段，不参与下载预算排序。"
+)
+
+
+def _term_tokens(term: str) -> list[str]:
+    """Casefolded, non-empty whitespace-delimited tokens of a relevance term."""
+    return [token for token in str(term or "").casefold().split() if token]
+
+
+def term_hits_title(term: str, title_casefolded: str) -> bool:
+    """True when *every* token of ``term`` appears in the casefolded title.
+
+    AND semantics: a multi-word phrase such as ``苹果折叠屏 实测`` hits only when
+    both ``苹果折叠屏`` and ``实测`` occur in the title.  Chinese is not
+    whitespace-segmented, so a plain ``in`` test is exactly right for each token;
+    the whitespace split only means "these must co-occur" (a single-token term
+    degrades to a plain substring test).
+
+    The candidate's ``source_keyword`` -- the query that surfaced it -- is
+    deliberately **not** consulted: counting it would let every candidate
+    self-certify membership in the theme and no candidate could ever score zero.
+    """
+    tokens = _term_tokens(term)
+    if not tokens:
+        return False
+    return all(token in title_casefolded for token in tokens)
+
+
+def _dedup_terms(theme: str, keywords: list[str] | None) -> list[str]:
+    """The theme plus its keyword expansion, de-duplicated (case-sensitive key)."""
+    terms: list[str] = []
+    seen: set[str] = set()
+    for raw in [theme, *(keywords or [])]:
+        key = str(raw or "").strip()
+        if key and key not in seen:
+            seen.add(key)
+            terms.append(key)
+    return terms
+
+
+def candidate_relevance(candidate: Candidate, terms: list[str]) -> float:
+    """Share of ``terms`` whose tokens all appear in the candidate title.
+
+    Model-free and explainable: no LLM, no embeddings.  The denominator here is
+    ``len(terms)``; the pipeline uses :func:`relevance_report`, whose denominator
+    is the pool-aware *live-term* count (dead terms are excluded), via
+    :func:`build_relevance_index`.
+    """
+    if not terms:
+        return 0.0
+    title_folded = str(getattr(candidate, "title", "") or "").casefold()
+    hits = sum(1 for term in terms if term_hits_title(term, title_folded))
+    return round(hits / len(terms), 6)
+
+
+def relevance_report(
+    candidates: list[Candidate], theme: str, keywords: list[str] | None = None
+) -> dict[str, Any]:
+    """Explainable relevance plus the *live-term* denominator it was scaled by.
+
+    A term is **live** when at least one candidate title in the current pool hits
+    it; a term that hits *nothing* (e.g. a space-containing phrase that never
+    co-occurs, or a brand alias the pool does not use) is **dead** and excluded
+    from the denominator -- otherwise a pool-independent construct nobody matches
+    would depress every score and blur the tier boundaries.
+
+    ``relevance = live_hits / live_count``.  When ``live_count == 0`` (no term
+    hits anything) every candidate scores ``0.0`` and ``degraded`` is ``True``,
+    so the caller can surface "relevance could not discriminate this pool"
+    without a division by zero.
+
+    Returns ``{theme, terms, live_terms, dead_terms, live_count, dead_count,
+    degraded, scores}`` where ``scores`` is ``video_id -> float``.
+    """
+    terms = _dedup_terms(theme, keywords)
+    titles = {candidate.video_id: str(getattr(candidate, "title", "") or "").casefold() for candidate in candidates}
+    live_terms = [term for term in terms if any(term_hits_title(term, text) for text in titles.values())]
+    live_count = len(live_terms)
+    live_set = set(live_terms)
+    dead_terms = [term for term in terms if term not in live_set]
+    scores: dict[str, float] = {}
+    for candidate in candidates:
+        text = titles[candidate.video_id]
+        hits = sum(1 for term in live_terms if term_hits_title(term, text))
+        scores[candidate.video_id] = round(hits / live_count, 6) if live_count else 0.0
+    return {
+        "theme": theme,
+        "terms": terms,
+        "live_terms": live_terms,
+        "dead_terms": dead_terms,
+        "live_count": live_count,
+        "dead_count": len(dead_terms),
+        "degraded": live_count == 0,
+        "scores": scores,
+    }
+
+
+def build_relevance_index(
+    candidates: list[Candidate], theme: str, keywords: list[str] | None = None
+) -> dict[str, float]:
+    """Map ``video_id`` -> relevance in ``[0, 1]``, scaled by the live-term count.
+
+    Delegates to :func:`relevance_report` so the returned index and the reported
+    ``live_terms`` / ``dead_terms`` attribution can never drift apart.
+    """
+    return relevance_report(candidates, theme, keywords)["scores"]
+
+
+def ranked_candidates(
+    candidates: list[Candidate], relevance: dict[str, float] | None = None
+) -> list[Candidate]:
+    """Deterministic download order: relevance desc, heat desc, video_id asc."""
+    scores = relevance or {}
+    return sorted(
+        candidates,
+        key=lambda item: (-float(scores.get(item.video_id, 0.0)), -float(item.heat_score), item.video_id),
+    )
+
+
+@dataclass(slots=True)
+class DownloadBudget:
+    """A run-wide cap on downloads, shared by every download loop.
+
+    Two byte ledgers, because "what we kept" and "what we actually pulled over
+    the wire" are different numbers and the run must be bounded by *both*:
+
+    * ``bytes`` (reported as ``delivered_bytes``) counts media that was finally
+      **delivered**: a download only lands here once it produced usable media
+      (download + probe + validation all passed), so a *failed* attempt frees
+      its slot and the loop automatically continues to the next candidate;
+    * ``transferred_bytes`` counts **every attempt that actually wrote bytes**,
+      whether or not it was delivered.  A corrupt file, a wrong-duration clip
+      or a ``short_decode`` rejection still cost real bandwidth, so a
+      download-only run cannot keep pulling files it never keeps.  Zero-byte
+      failures -- HTTP 4xx/5xx, a ``Content-Length`` oversize rejected before
+      the body is read, a probe that fails before any byte is fetched -- wrote
+      nothing and are **not** charged; a *cache hit* writes nothing either, so
+      it grows only ``bytes`` (the delivered ledger), never this one.
+
+    Consequences:
+
+    * the byte ceiling is enforced on ``max(bytes, transferred_bytes)`` (see
+      :meth:`consumed_bytes`), so neither ledger can be silently under-counted;
+    * the *delivered* ledger is idempotent per ``video_id``: the same video
+      selected in two stages (script then material) occupies one slot and one
+      ``bytes`` charge -- see :meth:`select` -- so ``count`` / ``bytes`` never
+      overstate what was delivered;
+    * a single item over ``max_item_bytes`` is skipped -- never "patched up" by
+      fetching a smaller/partial variant, which would bypass the per-item cap;
+    * running out of budget stops the run, attributed via ``stopped_by``:
+      ``"count"`` (item cap), ``"bytes"`` (the delivered ledger filled the byte
+      ceiling) or ``"transferred_bytes"`` (real traffic filled it without a
+      delivered file accounting for it).
+    """
+
+    max_count: int = 0
+    max_bytes: int = 0
+    max_item_bytes: int = 0
+    count: int = 0
+    bytes: int = 0
+    transferred_bytes: int = 0
+    stopped_by: str | None = None
+    selected: list[dict[str, Any]] = field(default_factory=list)
+    skipped: list[dict[str, Any]] = field(default_factory=list)
+
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> "DownloadBudget | None":
+        settings = download_budget_settings(config)
+        if not bool(settings.get("enabled", False)):
+            return None
+        return cls(
+            max_count=int(settings.get("max_count") or 0),
+            max_bytes=int(settings.get("max_bytes") or 0),
+            max_item_bytes=int(settings.get("max_item_bytes") or 0),
+        )
+
+    def consumed_bytes(self) -> int:
+        """The run's byte cost so far = ``max(delivered, transferred)``.
+
+        Preferring the larger of the two keeps *both* ledgers honest: a cache
+        hit grows only ``bytes`` and a rejected download grows only
+        ``transferred_bytes``; taking the max means neither is silently
+        under-counted when computing what is left of the ceiling.
+        """
+        return max(self.bytes, self.transferred_bytes)
+
+    def remaining_bytes(self) -> int | None:
+        if self.max_bytes <= 0:
+            return None
+        return max(0, self.max_bytes - self.consumed_bytes())
+
+    def item_cap(self) -> int | None:
+        """Per-download byte cap = min(per-item cap, remaining run budget).
+
+        The remaining budget is measured on real traffic (``transferred_bytes``,
+        via :meth:`consumed_bytes`), so a candidate that would still fit the
+        *delivered* ledger but overflow the *wire* ceiling is refused.
+        """
+        caps: list[int] = []
+        if self.max_item_bytes > 0:
+            caps.append(self.max_item_bytes)
+        remaining = self.remaining_bytes()
+        if remaining is not None:
+            caps.append(remaining)
+        return min(caps) if caps else None
+
+    def allow(self) -> tuple[bool, str]:
+        """May another download start?  Sets ``stopped_by`` when it may not."""
+        if self.max_count > 0 and self.count >= self.max_count:
+            self.stopped_by = self.stopped_by or "count"
+            return False, f"已达下载条数上限 {self.max_count} 条"
+        if self.max_bytes > 0 and self.bytes >= self.max_bytes:
+            self.stopped_by = self.stopped_by or "bytes"
+            return False, f"已达下载总量上限 {self.max_bytes} 字节"
+        if self.max_bytes > 0 and self.transferred_bytes >= self.max_bytes:
+            # Real traffic reached the ceiling while the delivered ledger did
+            # not -- e.g. a download-only run whose files were all rejected.
+            # Without this the loop would keep downloading forever.
+            self.stopped_by = self.stopped_by or "transferred_bytes"
+            return False, (
+                f"已达真实传输上限 {self.max_bytes} 字节"
+                f"（其中交付 {self.bytes} 字节，已写出 {self.transferred_bytes} 字节）"
+            )
+        return True, ""
+
+    def mark_transferred(self, size_bytes: int) -> None:
+        """Charge a download attempt that actually wrote bytes to the wire ledger.
+
+        Call this right after a successful ``invoke_downloader`` (or the real
+        ``materials.download_video`` cache hit).  The value is the number of
+        bytes that appeared on disk for this attempt -- see
+        :func:`measure_transferred_bytes` -- so a cache hit charges ``0`` while
+        a freshly written file the caller later rejects still charges its size.
+        """
+        self.transferred_bytes += max(0, int(size_bytes or 0))
+
+    def note_oversize(self, cap: int | None) -> str:
+        """Classify a ``MediaTooLargeError`` as ``"skip"`` or ``"stop"`` (P1d).
+
+        A single oversized item is **not** the run being exhausted: an item whose
+        declared size exceeds the *current* allowance says nothing about the
+        candidates behind it.  Treating it as exhaustion (the old behaviour) was
+        the direct cause of the "only 2 material sources" bug -- one oversize
+        item ``break``-ed the loop and left the ranked candidates behind it
+        (24 of 25 in the 9.13 run, incl. 10 real videos) entirely unevaluated.
+
+        The rule is now: while the run still has byte budget left
+        (``remaining_bytes() > 0``, or there is no byte ceiling at all) an
+        oversize is a plain ``"skip"`` -- drop the item and keep scanning.  Only
+        when the byte budget is *fully* spent (``remaining_bytes() == 0``) does an
+        oversize mean "nothing can fit any more" -> ``"stop"``.  ``allow()``
+        remains the authority for the count / byte ceilings and is called before
+        every download, so scanning can neither loop forever nor exceed a cap.
+
+        This is safe precisely because an oversize is cheap: a declared /
+        ``Content-Length`` / cached rejection reads **no body** (0 wire bytes --
+        see ``materials.download_video``), so "scan but do not download" costs
+        nothing.  A *streamed* oversize does read some bytes; the caller charges
+        those via :meth:`mark_transferred`, which shrinks ``remaining_bytes`` and
+        so still self-terminates.
+
+        This method only *classifies*: it never charges bytes.  ``cap`` is kept
+        for call-site compatibility and diagnostics.
+        """
+        remaining = self.remaining_bytes()
+        if remaining is None or remaining > 0:
+            return "skip"
+        self.stopped_by = self.stopped_by or "bytes"
+        return "stop"
+
+    def select(
+        self,
+        candidate: Candidate,
+        size_bytes: int,
+        relevance: float = 0.0,
+        stage: str = "",
+    ) -> None:
+        """Record one *delivered* file, idempotent per ``video_id``.
+
+        The same video legitimately enters the budget more than once: a video
+        pulled for the script replica is often re-selected as a material source
+        (the two stages keep separate on-disk copies).  It is still **one
+        delivered file**, so ``count`` and ``bytes`` (the delivered ledger) grow
+        only on the *first* delivery of a given ``video_id``.  A later selection
+        of the same id is recorded as a *stage tag* (``stage`` / ``stages``) on
+        the existing entry instead of being double-counted, so ``selected``
+        holds exactly one row per delivered video.
+
+        This idempotence is deliberately **not** extended to
+        ``transferred_bytes`` (charged by :meth:`mark_transferred`): a genuine
+        re-fetch really did put bytes on the wire, and hiding them would let a
+        run exceed the wire ceiling -- the exact failure ``transferred_bytes``
+        exists to prevent.  The two ledgers therefore answer different
+        questions: ``bytes`` = distinct delivered media, ``transferred_bytes`` =
+        real traffic.
+
+        ``stage`` ("script" / "material") is optional and purely additive: an
+        empty stage keeps the entry byte-for-byte identical to the pre-change
+        format (download-only runs), while a tagged entry lets the readme show
+        which stage(s) selected the video.
+        """
+        video_id = candidate.video_id
+        for entry in self.selected:
+            if entry["video_id"] == video_id:
+                # Same video, another stage: merge the tag, never re-charge.
+                if stage and stage not in entry.get("stages", []):
+                    entry.setdefault("stages", []).append(stage)
+                return
+        size = max(0, int(size_bytes or 0))
+        self.count += 1
+        self.bytes += size
+        entry: dict[str, Any] = {
+            "video_id": video_id,
+            "title": candidate.title,
+            "author": candidate.author,
+            "heat_score": round(float(candidate.heat_score or 0.0), 6),
+            "relevance_score": round(float(relevance or 0.0), 6),
+            "size_bytes": size,
+        }
+        if stage:
+            # New keys only -- an untagged (download-only) entry is unchanged.
+            entry["stage"] = stage
+            entry["stages"] = [stage]
+        self.selected.append(entry)
+
+    def skip(self, candidate: Candidate, stage: str, reason: str, relevance: float = 0.0) -> None:
+        self.skipped.append({
+            "video_id": candidate.video_id,
+            "stage": stage,
+            "reason": reason,
+            "title": candidate.title,
+            "author": candidate.author,
+            "heat_score": round(float(candidate.heat_score or 0.0), 6),
+            "relevance_score": round(float(relevance or 0.0), 6),
+        })
+
+    def snapshot(self, ranking_note: str = "") -> dict[str, Any]:
+        return {
+            "enabled": True,
+            "limits": {
+                "max_count": self.max_count,
+                "max_bytes": self.max_bytes,
+                "max_item_bytes": self.max_item_bytes,
+            },
+            # ``bytes`` is kept as a backwards-compatible alias of
+            # ``delivered_bytes`` (existing readers/tests); the two named keys
+            # make the delivered-vs-transferred distinction explicit.
+            "used": {
+                "count": self.count,
+                "bytes": self.bytes,
+                "delivered_bytes": self.bytes,
+                "transferred_bytes": self.transferred_bytes,
+            },
+            "ranking": {
+                "order": ["relevance", "heat_score", "video_id"],
+                "note": ranking_note or RANKING_LIMITATION_NOTE,
+            },
+            "stopped_by": self.stopped_by,
+            "selected": list(self.selected),
+            "skipped": list(self.skipped),
+        }
+
+
+def invoke_downloader(downloader, url: str, path: Path, config: dict[str, Any], cap: int | None) -> None:
+    """Call ``downloader``, passing ``max_bytes`` only when it supports it.
+
+    The real :func:`materials.download_video` enforces the cap in-flight; the
+    offline fakes across the test suite keep a 3-arg signature, so the kwarg is
+    only added when the callable actually declares it.
+    """
+    if cap is None:
+        downloader(url, path, config)
+        return
+    try:
+        parameters = inspect.signature(downloader).parameters
+    except (TypeError, ValueError):
+        parameters = None
+    if parameters is not None and "max_bytes" in parameters:
+        downloader(url, path, config, max_bytes=cap)
+    else:
+        downloader(url, path, config)
+
+
+def file_size(path: "Path | str") -> int:
+    """``st_size`` of ``path`` in bytes, or ``0`` when it is missing/unreadable."""
+    try:
+        return int(Path(path).stat().st_size)
+    except OSError:
+        return 0
+
+
+#: Backwards-compatible private alias (older call sites / tests use this name).
+_safe_size = file_size
+
+
+def measure_transferred_bytes(path: "Path | str", pre_size: int) -> int:
+    """Bytes a just-finished download attempt wrote to ``path``.
+
+    Callers capture ``pre_size = file_size(path)`` *before* invoking the
+    downloader, then pass it here afterwards.  A fresh download leaves a larger
+    file behind and charges the growth; a **cache hit** leaves the file
+    unchanged and therefore charges ``0`` (no new traffic) while still counting
+    against the delivered ledger.  A file that was downloaded but then rejected
+    by validation/duration still grew, so its bytes *are* charged -- that is the
+    whole point of tracking real traffic separately from delivered bytes.
+    """
+    current = file_size(path)
+    return current - pre_size if current > pre_size else 0
+
+
+def compute_visual_metrics(video: Path, duration: float, ocr_result: dict[str, Any] | None, temp_dir: Path, config: dict[str, Any]) -> VisualMetrics:
+    """Motion proxy (adjacent-frame gray delta) + OCR frame coverage for one video.
+
+    Two independent, dimensionally-correct signals feed :func:`visual_verdict`:
+
+    * **motion** -- ``motion_frame_ratio`` = fraction of sampled adjacent-frame
+      gray-delta pairs that reach ``motion_delta_threshold``; the clip has enough
+      motion when that fraction reaches ``min_motion_frame_ratio``.
+    * **text** -- ``ocr_text_frame_ratio`` = fraction of OCR'd frames that
+      carried on-screen text (``frames_with_text`` / ``frames_scanned``), bounded
+      by ``max_ocr_coverage``.
+
+    ``visual_ok = motion_ok or ocr_ok``.  When the OCR frame count is unknown
+    (an older cache without ``frames_with_text``) the text signal is reported as
+    *unmeasurable* instead of being fabricated into a ratio.
+    """
+    from .media_tools import resolve_media_tool
+
+    face = face_settings(config)
+    settings = material_settings(config)
+    interval = max(1, int(face.get("sampling_interval_seconds") or 1))
+    max_frames = max(1, int(face.get("max_frames") or 120))
+    width = max(320, int(face.get("frame_width") or 960))
+    # ``is not None`` (not ``or``) so a deliberate 0.0 stays 0.0.
+    delta_threshold = float(
+        settings["motion_delta_threshold"]
+        if settings.get("motion_delta_threshold") is not None
+        else DEFAULT_MOTION_DELTA_THRESHOLD
+    )
+    min_motion_ratio = float(
+        settings["min_motion_frame_ratio"]
+        if settings.get("min_motion_frame_ratio") is not None
+        else DEFAULT_MIN_MOTION_FRAME_RATIO
+    )
+    max_ocr = float(
+        settings["max_ocr_coverage"]
+        if settings.get("max_ocr_coverage") is not None
+        else DEFAULT_MAX_OCR_COVERAGE
+    )
+
+    ocr = ocr_result or {}
+    # ``frames_scanned`` (frames actually OCR'd) is the honest denominator; the
+    # older ``sampled_frames`` guess is only a fallback for cached results that
+    # predate the new field.
+    frames_scanned = int(ocr.get("frames_scanned") or ocr.get("sampled_frames") or 0)
+    raw_with_text = ocr.get("frames_with_text")
+    frames_with_text = int(raw_with_text) if raw_with_text is not None else None
+
+    frames_dir = Path(temp_dir) / "motion-frames"
+    frames_dir.mkdir(parents=True, exist_ok=True)
+    pattern = str(frames_dir / "frame-%04d.jpg")
+    ffmpeg = resolve_media_tool(config, "ffmpeg")
+    command = [
+        ffmpeg, "-y", "-v", "error", "-i", str(video),
+        "-vf", f"fps=1/{interval},scale='min({width},iw)':-2",
+        "-frames:v", str(max_frames), pattern,
+    ]
+    completed = _run_media_process(command)
+    frame_files = sorted(frames_dir.glob("frame-*.jpg"))
+    diffs: list[float] = []
+    try:
+        if completed.returncode == 0:
+            import cv2
+            import numpy as np
+            previous = None
+            for frame_file in frame_files:
+                gray = imread_unicode(frame_file, cv2.IMREAD_GRAYSCALE)
+                if gray is None:
+                    continue
+                if previous is not None and previous.shape == gray.shape:
+                    diffs.append(float(np.mean(cv2.absdiff(gray, previous))) / 255.0)
+                previous = gray
+    finally:
+        for frame_file in frame_files:
+            frame_file.unlink(missing_ok=True)
+        try:
+            frames_dir.rmdir()
+        except OSError:
+            pass
+
+    motion_ratio = sum(1 for delta in diffs if delta >= delta_threshold) / len(diffs) if diffs else 0.0
+    verdict = visual_verdict(
+        motion_frame_ratio=motion_ratio,
+        frames_with_text=frames_with_text,
+        frames_scanned=frames_scanned,
+        motion_delta_threshold=delta_threshold,
+        min_motion_frame_ratio=min_motion_ratio,
+        max_ocr_coverage=max_ocr,
+    )
+    return VisualMetrics(
+        sampled_frames=len(diffs) + 1 if diffs else len(frame_files),
+        motion_frame_ratio=round(motion_ratio, 6),
+        ocr_text_frame_ratio=verdict["ocr_text_frame_ratio"],
+        visual_ok=verdict["visual_ok"],
+        motion_delta_threshold=round(delta_threshold, 6),
+        min_motion_frame_ratio=round(min_motion_ratio, 6),
+        max_ocr_coverage=round(max_ocr, 6),
+        ocr_measurable=verdict["ocr_measurable"],
+        motion_ok=verdict["motion_ok"],
+        ocr_ok=verdict["ocr_ok"],
+        reject_reason=verdict["reason"],
+    )
+
+
+def speech_rate(transcript: dict[str, Any] | None, duration: float) -> float:
+    if not transcript or transcript.get("status") != "success":
+        return 0.0
+    chars = len(re.sub(r"\s+", "", str(transcript.get("text") or "")))
+    return round(chars / max(1.0, float(duration)), 6)
+
+
+def _downloader(deps: "ReplicationDeps | None"):
+    provided = getattr(deps, "downloader", None) if deps is not None else None
+    if provided is not None:
+        return provided
+    from .materials import download_video
+    return download_video
+
+
+def _prober(deps: "ReplicationDeps | None"):
+    provided = getattr(deps, "prober", None) if deps is not None else None
+    if provided is not None:
+        return provided
+    from .materials import probe_video
+    return probe_video
+
+
+def _validator(deps: "ReplicationDeps | None"):
+    """The injectable whole-validation effect (``None`` -> real ffprobe+ffmpeg)."""
+    return getattr(deps, "validator", None) if deps is not None else None
+
+
+def _transcriber(config: dict[str, Any], deps: "ReplicationDeps | None"):
+    provided = getattr(deps, "transcriber", None) if deps is not None else None
+    if provided is not None:
+        return provided
+    from .media_processing import CheckpointTranscriber
+    return CheckpointTranscriber(config)
+
+
+def _ocr(config: dict[str, Any], deps: "ReplicationDeps | None"):
+    provided = getattr(deps, "ocr", None) if deps is not None else None
+    if provided is not None:
+        return provided
+    from .media_processing import KeyframeOCR
+    return KeyframeOCR(config)
+
+
+def _face_detector(config: dict[str, Any], deps: "ReplicationDeps | None"):
+    provided = getattr(deps, "face_detector", None) if deps is not None else None
+    if provided is not None:
+        return provided
+    from .face_metrics import FaceDetector
+    return FaceDetector(config)
+
+
+def select_script_replica(
+    config: dict[str, Any],
+    candidates: list[Candidate],
+    *,
+    media_urls: dict[str, str] | None = None,
+    deps: "ReplicationDeps | None" = None,
+    clock: Any = None,
+    budget: "DownloadBudget | None" = None,
+    relevance: dict[str, float] | None = None,
+    validation_store: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Pick exactly one script replica, or report ``not_found`` with reasons.
+
+    Every rejected candidate is recorded as a structured
+    ``{"video_id", "stage", "reason"}`` entry (``stage`` is one of ``pool``,
+    ``duration``, ``validation`` or ``speech``) so a ``not_found`` outcome is
+    fully attributable downstream instead of being a silent dead end.
+
+    ``validation_store`` collects the per-file download-validation records for
+    the run-level ``validation.json``.
+    """
+    from .replication_theme import project_path
+
+    media_urls = media_urls or {}
+    settings = material_replication_settings(config)
+    media_root = project_path(config, settings.get("media_root") or "data/media/material-replication")
+    cache_root = project_path(config, settings.get("cache_root") or "data/cache/material-replication")
+    temp_root = project_path(config, settings.get("temp_root") or "data/temp/material-replication")
+    pool = script_candidate_pool(candidates, config)
+    if budget is not None:
+        pool = ranked_candidates(pool, relevance)
+    unmet: list[dict[str, str]] = []
+    errors: list[dict[str, str]] = []
+    asr_attempted = 0
+    validation_on = validation_enabled(config)
+    validation_passed = 0
+    validation_rejected = 0
+
+    def _stage(conclusion: str) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "candidate_pool": len(pool),
+            "asr_attempted": asr_attempted,
+            "rejected": len(unmet),
+            "errors": len(errors),
+            "conclusion": conclusion,
+        }
+        if validation_on:
+            payload["stage_validation_passed"] = validation_passed
+            payload["stage_validation_rejected"] = validation_rejected
+        return payload
+
+    if not pool:
+        unmet.append({"video_id": "", "stage": "pool", "reason": "无候选满足热度与时长门槛"})
+        return {
+            "status": "not_found", "candidate": None, "video_path": "", "probe": {}, "transcript": {},
+            "unmet": unmet, "errors": errors, "downloaded": 0, "stage": _stage("not_found"),
+        }
+
+    downloader = _downloader(deps)
+    prober = _prober(deps)
+    transcriber = _transcriber(config, deps)
+    downloaded = 0
+    min_seconds = float(script_settings(config).get("min_seconds") or 30)
+    max_seconds = float(script_settings(config).get("max_seconds") or 300)
+    # Shared single video cache root (see ``REPLICATION_VIDEO_SUBDIR``): the
+    # script replica and the material sources reuse the same ``<id>.mp4`` so a
+    # video common to both stages is fetched once, not twice.
+    video_root = media_root / REPLICATION_VIDEO_SUBDIR
+    for candidate in pool:
+        usable, not_video_reason = is_video_candidate(candidate)
+        if not usable:
+            unmet.append({"video_id": candidate.video_id, "stage": "not_video", "reason": not_video_reason})
+            continue
+        if budget is not None:
+            allowed, budget_reason = budget.allow()
+            if not allowed:
+                unmet.append({"video_id": candidate.video_id, "stage": "budget", "reason": budget_reason})
+                break
+        rel = (relevance or {}).get(candidate.video_id, 0.0)
+        try:
+            video_path = video_root / f"{candidate.video_id}.mp4"
+            pre_size = file_size(video_path)
+            try:
+                invoke_downloader(downloader, media_urls.get(candidate.video_id, ""), video_path, config, budget.item_cap() if budget is not None else None)
+            except MediaTooLargeError as exc:
+                if budget is None:
+                    raise
+                # A *streamed* oversize already pulled real bytes off the wire
+                # before aborting (``source == "streamed"``, ``bytes_read > 0``);
+                # charge them so the traffic ledger is honest.  A *declared*
+                # oversize read no body (``bytes_read == 0``) and charges nothing.
+                budget.mark_transferred(int(getattr(exc, "bytes_read", 0) or 0))
+                action = budget.note_oversize(budget.item_cap())
+                budget.skip(candidate, "budget_item" if action == "skip" else "budget_bytes", str(exc)[:160], relevance=rel)
+                if action == "stop":
+                    unmet.append({"video_id": candidate.video_id, "stage": "budget", "reason": str(exc)[:160]})
+                    break
+                unmet.append({"video_id": candidate.video_id, "stage": "too_large", "reason": f"体积超限：{str(exc)[:120]}"})
+                continue
+            if budget is not None:
+                # Charge real traffic *before* any later rejection: a file that
+                # is downloaded and then dropped still cost bandwidth.
+                budget.mark_transferred(measure_transferred_bytes(video_path, pre_size))
+            downloaded += 1
+            try:
+                probe = prober(video_path, config)
+            except Exception as exc:
+                unmet.append({"video_id": candidate.video_id, "stage": "invalid_media", "reason": f"媒体无效：{str(exc)[:120]}"})
+                continue
+            media_ok, media_reason = validate_probe(probe)
+            if not media_ok:
+                unmet.append({"video_id": candidate.video_id, "stage": "invalid_media", "reason": f"媒体无效：{media_reason}"})
+                continue
+            # Download-time validation sits *before* ``budget.select`` so a
+            # corrupt file can never hold a slot or a byte of the run budget.
+            # A rejection simply falls through to the next candidate.
+            validation_record = validate_candidate(
+                video_path, config, candidate=candidate, probe=probe, prober=prober,
+                validator=_validator(deps),
+            )
+            if validation_record is not None:
+                record_validation(validation_store, validation_record, stage="script")
+                if not validation_record.get("passed"):
+                    validation_rejected += 1
+                    unmet.append({
+                        "video_id": candidate.video_id,
+                        "stage": "validation",
+                        "reason": validation_reason(validation_record),
+                    })
+                    continue
+                validation_passed += 1
+            # Post-download half of the duration gate: when the metadata carried
+            # no duration the pre-download window could not judge this file, so
+            # the measured duration is judged against the same window now.
+            window_reject, window_reason = measured_duration_window_reject(
+                float(probe.get("duration_seconds") or 0), config,
+                metadata_duration=float(getattr(candidate, "duration_seconds", 0.0) or 0.0),
+            )
+            if window_reject:
+                unmet.append({"video_id": candidate.video_id, "stage": "duration_post", "reason": window_reason})
+                continue
+            duration = float(probe.get("duration_seconds") or 0)
+            if not min_seconds <= duration <= max_seconds:
+                unmet.append({
+                    "video_id": candidate.video_id,
+                    "stage": "duration",
+                    "reason": f"时长 {duration:.0f}s 不在 {min_seconds:.0f}~{max_seconds:.0f}s",
+                })
+                continue
+            # P1c: ``select`` sits *after* the duration gate so a file rejected on
+            # its measured duration never holds a slot or a byte of the run
+            # budget.  (The download-time validation above already sits before
+            # ``select`` for the same reason; only ``select`` moves, not it.)
+            if budget is not None:
+                budget.select(candidate, _safe_size(video_path), relevance=rel, stage="script")
+            cache_dir = cache_root / "script" / candidate.video_id
+            temp_dir = temp_root / "script" / candidate.video_id
+            asr_attempted += 1
+            transcript = transcriber.run(video_path, cache_dir, temp_dir)
+            ok, reason = evaluate_script_transcript(transcript, duration, config)
+            if not ok:
+                unmet.append({"video_id": candidate.video_id, "stage": "speech", "reason": reason})
+                continue
+            return {
+                "status": "found",
+                "candidate": candidate,
+                "video_path": video_path,
+                "probe": probe,
+                "transcript": transcript,
+                "unmet": unmet,
+                "errors": errors,
+                "downloaded": downloaded,
+                "stage_validation_passed": validation_passed,
+                "stage_validation_rejected": validation_rejected,
+                "stage": _stage("found"),
+            }
+        except Exception as exc:
+            errors.append({"video_id": candidate.video_id, "stage": "download_or_probe", "error": str(exc)[:300]})
+    if not unmet and not errors:
+        unmet.append({"video_id": "", "stage": "transcript", "reason": "全部候选转写未达标"})
+    return {
+        "status": "not_found", "candidate": None, "video_path": "", "probe": {}, "transcript": {},
+        "unmet": unmet, "errors": errors, "downloaded": downloaded,
+        "stage_validation_passed": validation_passed, "stage_validation_rejected": validation_rejected,
+        "stage": _stage("not_found"),
+    }
+
+
+def _material_summary(
+    pool_size: int, face_checked: int, selected_count: int, min_count: int, unmet: list[dict[str, Any]]
+) -> str:
+    """Human-readable one-line reason why the material replica set is short."""
+    details = "；".join(
+        f"{entry.get('video_id') or '候选池'}：{entry.get('reason') or ''}".rstrip("：")
+        for entry in unmet
+    ) or "无候选进入素材筛选"
+    headline = (
+        f"仅选出素材复刻视频 {selected_count} 条，不足最小 {min_count} 条"
+        if selected_count
+        else "未选出素材复刻视频"
+    )
+    return f"{headline}（候选池 {pool_size} 条，进入人脸检测 {face_checked} 条）：{details}"
+
+
+def select_material_replicas(
+    config: dict[str, Any],
+    candidates: list[Candidate],
+    *,
+    media_urls: dict[str, str] | None = None,
+    deps: "ReplicationDeps | None" = None,
+    clock: Any = None,
+    budget: "DownloadBudget | None" = None,
+    relevance: dict[str, float] | None = None,
+    validation_store: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Select 2~4 low-speech, face-acceptable, deduplicated material videos.
+
+    Every dropped candidate is recorded in ``unmet`` as a structured
+    ``{"video_id", "stage", "reason"}`` entry so an empty/insufficient material
+    set is fully attributable downstream.  ``stage`` is one of ``pool``,
+    ``author_duplicate``, ``invalid_media``, ``validation``, ``duration``,
+    ``face``, ``visual``, ``speech`` or ``quota``.
+
+    ``validation_store`` collects the per-file download-validation records for
+    the run-level ``validation.json``.
+    """
+    from .replication_theme import project_path
+
+    media_urls = media_urls or {}
+    settings = material_replication_settings(config)
+    material = material_settings(config)
+    media_root = project_path(config, settings.get("media_root") or "data/media/material-replication")
+    cache_root = project_path(config, settings.get("cache_root") or "data/cache/material-replication")
+    temp_root = project_path(config, settings.get("temp_root") or "data/temp/material-replication")
+    min_count = int(material.get("min_count") or 2)
+    target = int(material.get("target_count") or 4)
+    min_seconds = float(material.get("min_seconds") or 15)
+    max_seconds = float(material.get("max_seconds") or 180)
+    max_speech = float(material.get("max_speech_rate") or 1.2)
+    max_per_author = int(material.get("max_per_author") or 1)
+
+    pool, median = material_candidate_pool(candidates, config)
+    if budget is not None:
+        pool = ranked_candidates(pool, relevance)
+    pool_ids = {candidate.video_id for candidate in pool}
+    downloader = _downloader(deps)
+    prober = _prober(deps)
+    ocr_runner = _ocr(config, deps)
+    face_runner = _face_detector(config, deps)
+    transcriber = _transcriber(config, deps)
+
+    selected: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    warnings: list[str] = []
+    unmet: list[dict[str, Any]] = []
+    author_counts: dict[str, int] = {}
+    downloaded = 0
+    face_checked = 0
+    face_errors = 0
+    rejected_face_heavy = 0
+    rejected_duration = 0
+    invalid_media = 0
+    rejected_pool = 0
+    rejected_author_duplicate = 0
+    rejected_visual = 0
+    rejected_speech = 0
+    rejected_not_video = 0
+    rejected_duration_post = 0
+    validation_on = validation_enabled(config)
+    validation_passed = 0
+    validation_rejected = 0
+
+    # Candidates below the heat median never enter the loop; record them so the
+    # pool stage is attributable too, instead of vanishing silently.
+    for candidate in candidates:
+        if candidate.video_id in pool_ids:
+            continue
+        rejected_pool += 1
+        unmet.append({
+            "video_id": candidate.video_id,
+            "stage": "pool",
+            "reason": f"热度 {candidate.heat_score:.3f} 低于池中位数 {median:.3f}",
+            "heat_score": round(float(candidate.heat_score), 6),
+        })
+
+    # Same shared video cache root as the script chain (see
+    # ``REPLICATION_VIDEO_SUBDIR``): a video pulled for the script replica is
+    # found here as a cache hit instead of being downloaded a second time.
+    video_root = media_root / REPLICATION_VIDEO_SUBDIR
+    for index, candidate in enumerate(pool):
+        if len(selected) >= target:
+            for leftover in pool[index:]:
+                unmet.append({"video_id": leftover.video_id, "stage": "quota", "reason": f"已达目标 {target} 条，未评估"})
+            break
+        usable, not_video_reason = is_video_candidate(candidate)
+        if not usable:
+            rejected_not_video += 1
+            unmet.append({
+                "video_id": candidate.video_id,
+                "stage": "not_video",
+                "reason": not_video_reason,
+                "aweme_type": str(getattr(candidate, "aweme_type", "") or ""),
+            })
+            continue
+        if author_counts.get(candidate.author, 0) >= max_per_author:
+            rejected_author_duplicate += 1
+            unmet.append({
+                "video_id": candidate.video_id,
+                "stage": "author_duplicate",
+                "reason": f"作者 {candidate.author or '未知'} 已入选 {author_counts.get(candidate.author, 0)} 条（上限 {max_per_author}）",
+                "author": candidate.author,
+            })
+            continue
+        if budget is not None:
+            allowed, budget_reason = budget.allow()
+            if not allowed:
+                unmet.append({"video_id": candidate.video_id, "stage": "budget", "reason": budget_reason})
+                break
+        rel = (relevance or {}).get(candidate.video_id, 0.0)
+        try:
+            video_path = video_root / f"{candidate.video_id}.mp4"
+            pre_size = file_size(video_path)
+            try:
+                invoke_downloader(downloader, media_urls.get(candidate.video_id, ""), video_path, config, budget.item_cap() if budget is not None else None)
+            except MediaTooLargeError as exc:
+                if budget is None:
+                    raise
+                # A *streamed* oversize already pulled real bytes off the wire
+                # before aborting (``source == "streamed"``, ``bytes_read > 0``);
+                # charge them so the traffic ledger is honest.  A *declared*
+                # oversize read no body (``bytes_read == 0``) and charges nothing.
+                budget.mark_transferred(int(getattr(exc, "bytes_read", 0) or 0))
+                action = budget.note_oversize(budget.item_cap())
+                budget.skip(candidate, "budget_item" if action == "skip" else "budget_bytes", str(exc)[:160], relevance=rel)
+                if action == "stop":
+                    unmet.append({"video_id": candidate.video_id, "stage": "budget", "reason": str(exc)[:160]})
+                    break
+                unmet.append({"video_id": candidate.video_id, "stage": "too_large", "reason": f"体积超限：{str(exc)[:120]}"})
+                continue
+            if budget is not None:
+                # Charge real traffic *before* any later rejection: a file that
+                # is downloaded and then dropped still cost bandwidth.
+                budget.mark_transferred(measure_transferred_bytes(video_path, pre_size))
+            downloaded += 1
+            try:
+                probe = prober(video_path, config)
+            except Exception as exc:
+                invalid_media += 1
+                warnings.append(f"{candidate.video_id} 媒体无效，已跳过：{str(exc)[:120]}")
+                unmet.append({"video_id": candidate.video_id, "stage": "invalid_media", "reason": f"媒体无效：{str(exc)[:120]}"})
+                continue
+            media_ok, media_reason = validate_probe(probe)
+            if not media_ok:
+                invalid_media += 1
+                warnings.append(f"{candidate.video_id} 媒体无效，已跳过：{media_reason}")
+                unmet.append({"video_id": candidate.video_id, "stage": "invalid_media", "reason": f"媒体无效：{media_reason}"})
+                continue
+            # Download-time validation sits *before* ``budget.select`` so a
+            # corrupt file can never hold a slot or a byte of the run budget.
+            # A rejection simply falls through to the next candidate.
+            validation_record = validate_candidate(
+                video_path, config, candidate=candidate, probe=probe, prober=prober,
+                validator=_validator(deps),
+            )
+            if validation_record is not None:
+                record_validation(validation_store, validation_record, stage="material")
+                if not validation_record.get("passed"):
+                    validation_rejected += 1
+                    reason = validation_reason(validation_record)
+                    warnings.append(f"{candidate.video_id} 下载校验未通过，已剔除：{reason}")
+                    unmet.append({
+                        "video_id": candidate.video_id,
+                        "stage": "validation",
+                        "reason": reason,
+                        "conclusion": validation_record.get("conclusion"),
+                    })
+                    continue
+                validation_passed += 1
+            # Post-download half of the duration gate (see
+            # ``measured_duration_window_reject``): the pre-download window can
+            # only judge candidates whose metadata carried a duration.
+            window_reject, window_reason = measured_duration_window_reject(
+                float(probe.get("duration_seconds") or 0), config,
+                metadata_duration=float(getattr(candidate, "duration_seconds", 0.0) or 0.0),
+            )
+            if window_reject:
+                rejected_duration_post += 1
+                unmet.append({"video_id": candidate.video_id, "stage": "duration_post", "reason": window_reason})
+                continue
+            duration = float(probe.get("duration_seconds") or 0)
+            if not min_seconds <= duration <= max_seconds:
+                rejected_duration += 1
+                unmet.append({
+                    "video_id": candidate.video_id,
+                    "stage": "duration",
+                    "reason": f"时长 {duration:.0f}s 不在 {min_seconds:.0f}~{max_seconds:.0f}s",
+                })
+                continue
+            # P1c: only a candidate that cleared both duration gates may hold a
+            # slot and a byte of the run budget (see the script chain for the
+            # rationale); a duration-rejected file is dropped outright.
+            if budget is not None:
+                budget.select(candidate, _safe_size(video_path), relevance=rel, stage="material")
+            cache_dir = cache_root / "material" / candidate.video_id
+            temp_dir = temp_root / "material" / candidate.video_id
+            ocr_result = ocr_runner.run(video_path, duration, cache_dir / "ocr", temp_dir / "ocr")
+            visual = compute_visual_metrics(video_path, duration, ocr_result, temp_dir / "motion", config)
+            face = face_runner.run(video_path, duration, cache_dir / "face", temp_dir / "face")
+            face_checked += 1
+            # A severely truncated sample (covers < half the clip) must not be
+            # read as a trustworthy ``face_free`` verdict -- downgrade it before
+            # the class gate can act on it.
+            face = truncated_face_class(face)
+            face_status_value = face.get("status")
+            if face_status_value is not None and str(face_status_value) != "ok":
+                face_errors += 1
+                if str(face_status_value) == "error":
+                    detail = str(face.get("error") or "").strip()[:160]
+                    warnings.append(f"{candidate.video_id} 人脸采样失败：{detail or '未知错误'}")
+            transcript = transcriber.run(video_path, cache_dir / "asr", temp_dir / "asr")
+            rate = speech_rate(transcript, duration)
+            face_class = str(face.get("face_class") or FACE_UNAVAILABLE)
+            if face_class not in {FACE_FREE, FACE_LOW}:
+                rejected_face_heavy += 1
+                unmet.append({
+                    "video_id": candidate.video_id,
+                    "stage": "face",
+                    "reason": f"人脸分级 {face_class}（非 face_free/low_face）",
+                    "face_class": face_class,
+                    "face_class_reason": str(face.get("face_class_reason") or ""),
+                    "truncated": bool(face.get("truncated", False)),
+                    "expected_frames": face.get("expected_frames"),
+                    "emitted_frames": face.get("emitted_frames"),
+                    "sample_coverage": face.get("sample_coverage"),
+                })
+                continue
+            if not visual.visual_ok:
+                rejected_visual += 1
+                unmet.append({
+                    "video_id": candidate.video_id,
+                    "stage": "visual",
+                    # ``reject_reason`` names the failing criterion (运动不足 /
+                    # 文字过多 / OCR 不可测); the fallback keeps mocked/legacy
+                    # metrics (no reason field) readable.
+                    "reason": visual.reject_reason or (
+                        f"画面代理不达标：变化率 {visual.motion_frame_ratio:.2f}、"
+                        f"OCR 覆盖 {visual.ocr_text_frame_ratio:.2f}"
+                    ),
+                    "motion_frame_ratio": visual.motion_frame_ratio,
+                    "ocr_text_frame_ratio": visual.ocr_text_frame_ratio,
+                    "ocr_measurable": visual.ocr_measurable,
+                })
+                continue
+            if rate >= max_speech:
+                chars = len(re.sub(r"\s+", "", str((transcript or {}).get("text") or "")))
+                rejected_speech += 1
+                unmet.append({
+                    "video_id": candidate.video_id,
+                    "stage": "speech",
+                    "reason": f"口播密度 {rate:.2f} ≥ {max_speech} 字/秒（{chars} 字/{duration:.0f}s）",
+                    "speech_rate": rate,
+                    "chars": chars,
+                })
+                continue
+            selected.append({
+                "candidate": candidate,
+                "video_path": video_path,
+                "probe": probe,
+                "visual": visual,
+                "face": face,
+                "speech_rate": rate,
+                "selected_reason": (
+                    f"画面变化率 {visual.motion_frame_ratio:.2f}/OCR覆盖 {visual.ocr_text_frame_ratio:.2f}/"
+                    f"口播 {rate:.2f} 字每秒/人脸 {face_class}"
+                ),
+            })
+            author_counts[candidate.author] = author_counts.get(candidate.author, 0) + 1
+        except Exception as exc:
+            errors.append({"video_id": candidate.video_id, "error": str(exc)[:300]})
+
+    insufficient = len(selected) < min_count
+    stage = {
+        "candidate_pool": len(pool),
+        "heat_median": round(float(median), 6),
+        "face_checked": face_checked,
+        "selected": len(selected),
+        "rejected": len(unmet),
+        "errors": len(errors),
+        "conclusion": "success" if not insufficient else ("empty" if not selected else "insufficient"),
+    }
+    if validation_on:
+        stage["stage_validation_passed"] = validation_passed
+        stage["stage_validation_rejected"] = validation_rejected
+    if insufficient:
+        warnings.append(_material_summary(len(pool), face_checked, len(selected), min_count, unmet))
+    face_backend = str(getattr(face_runner, "backend", FACE_UNAVAILABLE))
+    counters: dict[str, Any] = {
+        "downloaded": downloaded,
+        "face_checked": face_checked,
+        "face_errors": face_errors,
+        "clips_rejected_face_heavy": rejected_face_heavy,
+        "clips_rejected_duration": rejected_duration,
+        "rejected_duration_post": rejected_duration_post,
+        "rejected_not_video": rejected_not_video,
+        "invalid_media": invalid_media,
+        "rejected_pool": rejected_pool,
+        "rejected_author_duplicate": rejected_author_duplicate,
+        "rejected_visual": rejected_visual,
+        "rejected_speech": rejected_speech,
+        "material_selected": len(selected),
+    }
+    if validation_on:
+        counters["stage_validation_passed"] = validation_passed
+        counters["stage_validation_rejected"] = validation_rejected
+    return {
+        "status": "success" if not insufficient else "insufficient",
+        "selected": selected,
+        "insufficient": insufficient,
+        "median_heat": median,
+        "unmet": unmet,
+        "stage": stage,
+        "face_backend": face_backend,
+        "face_backend_status": "ok" if face_backend != FACE_UNAVAILABLE else FACE_UNAVAILABLE,
+        "stage_validation_passed": validation_passed,
+        "stage_validation_rejected": validation_rejected,
+        "counters": counters,
+        "warnings": warnings,
+        "errors": errors,
+    }

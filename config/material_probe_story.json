@@ -1,0 +1,16 @@
+{
+  "schema_version": "1.0",
+  "story_id": "bill-gates-turbulent-ai-era",
+  "target_date": "2026-08-28",
+  "title_zh": "比尔·盖茨：现在对 AI 做出的选择至关重要",
+  "summary_zh": "比尔·盖茨在个人官方网站讨论 AI 转型可能带来的剧烈变化、社会准备不足，以及对 AI token 和机器人征税等治理选项。",
+  "confirmation_status": "official_primary_source",
+  "official_sources": [
+    {
+      "publisher": "Gates Notes",
+      "role": "作者官方文章",
+      "url": "https://www.gatesnotes.com/a-turbulent-ai-era-and-critical-choices-to-make"
+    }
+  ],
+  "commons_query": "Bill Gates in 2024"
+}

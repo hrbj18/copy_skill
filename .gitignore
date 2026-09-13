@@ -1,0 +1,56 @@
+.env
+.env.*
+!.env.example
+*.cookie
+*cookies*.txt
+www.douyin.com_cookies.txt
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+output/
+data/raw/
+data/state/
+data/media/
+data/models/
+data/cache/
+data/temp/
+.env.local
+.env.*.local
+
+# Local runtime data and generated artifacts
+data/
+output/
+*.log
+
+# Third-party MediaCrawler: declared as a submodule in .gitmodules.
+# The bundled copy was shipped as a ZIP with .git stripped, so it cannot be
+# recorded as a gitlink (it would resolve to 0000000). Ignore the tree and
+# re-obtain it with: git submodule update --init third_party/MediaCrawler
+third_party/MediaCrawler/
+third_party/MediaCrawler/.venv/
+third_party/MediaCrawler/data/
+third_party/MediaCrawler/browser_data/
+third_party/MediaCrawler/*_user_data_dir/
+
+# Test and tool scratch directories
+.pytest*/
+.pytest_*
+director-pytest-*/
+.tmp/
+
+# Local browser inspection snapshots and session notes
+_bstate*.json
+_pagetext.json
+_snap.json
+SESSION_LOG_*.md
+
+# Append-only local integration history is not current implementation truth
+docs/项目开发过程文档.md
+
+# Editor and operating-system files
+.idea/
+.vscode/
+Thumbs.db
+.DS_Store
