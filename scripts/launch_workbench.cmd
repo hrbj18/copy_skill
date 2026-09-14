@@ -52,5 +52,5 @@ if not "%LAUNCH_EXIT%"=="0" (
   if not "%COPY_SKILL_LAUNCHER_NO_PAUSE%"=="1" pause
 )
 
-del /q "%RUN_LOG%" >nul 2>&1
+if defined RUN_LOG if exist "%RUN_LOG%" del /q "%RUN_LOG%" >nul 2>&1
 exit /b %LAUNCH_EXIT%

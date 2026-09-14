@@ -21,6 +21,19 @@ from douyin_intelligence.workbench_launcher import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def _assert_within(path: Path, root: Path) -> None:
+    """Refuse to touch ``path`` unless it is strictly inside ``root``.
+
+    Guards cleanup helpers against a stray delete target -- the exact class of
+    bug that once wiped the repository root.  Never the root itself: only
+    descendants of the sandbox we created.
+    """
+    resolved = path.resolve()
+    root = root.resolve()
+    assert resolved != root, f"refusing to touch {resolved} itself"
+    assert root in resolved.parents, f"refusing to touch {resolved} (outside {root})"
+
+
 def _config(tmp_path: Path) -> dict:
     return {
         "timezone": "Asia/Shanghai",
@@ -60,7 +73,7 @@ def test_missing_virtualenv_is_visible_nonzero_and_never_uses_system_python() ->
         comspec = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
         result = subprocess.run(
             [comspec, "/d", "/c", str(scripts / "launch_workbench.cmd"), str(fake_root)],
-            cwd=ROOT,
+            cwd=fake_root.parent,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -74,6 +87,7 @@ def test_missing_virtualenv_is_visible_nonzero_and_never_uses_system_python() ->
         assert log.is_file()
         assert "virtual environment is missing" in log.read_text(encoding="utf-8")
     finally:
+        _assert_within(fake_root.parent, ROOT / "data" / "temp")
         shutil.rmtree(fake_root.parent, ignore_errors=True)
 
 
@@ -95,7 +109,7 @@ def test_package_import_failure_is_logged_and_visible_without_silent_exit() -> N
         comspec = os.environ.get("COMSPEC", r"C:\Windows\System32\cmd.exe")
         result = subprocess.run(
             [comspec, "/d", "/c", str(fake_root / "scripts" / "launch_workbench.cmd"), str(fake_root)],
-            cwd=ROOT,
+            cwd=fake_root.parent,
             env=env,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
@@ -111,6 +125,7 @@ def test_package_import_failure_is_logged_and_visible_without_silent_exit() -> N
         assert log.stat().st_size < 16_384
         assert not list(log.parent.glob("workbench-launch-*.tmp"))
     finally:
+        _assert_within(fake_root.parent, ROOT / "data" / "temp")
         shutil.rmtree(fake_root.parent, ignore_errors=True)
 
 
@@ -187,3 +202,17 @@ def test_cli_workbench_command_uses_guarded_launcher(monkeypatch, tmp_path: Path
 
 def test_safe_launcher_error_has_finite_length() -> None:
     assert len(safe_launcher_error(RuntimeError("x" * 5000))) == 800
+
+
+def test_launcher_scripts_are_crlf_and_guard_their_delete() -> None:
+    # A LF-only batch file makes cmd.exe mis-parse the launcher: ``cd /d`` and
+    # ``set "RUN_LOG=..."`` silently fail, so the trailing ``del /q "%RUN_LOG%"``
+    # degrades to ``del /q ""`` -- which deletes *every* file in the caller's
+    # working directory.  That is how a bare ``pytest tests`` once wiped the
+    # repository root.  Keep CRLF endings and never delete an empty target.
+    for name in ("启动工作台.bat", "科技内容情报工作台.cmd", "scripts/launch_workbench.cmd"):
+        raw = (ROOT / name).read_bytes()
+        assert b"\r\n" in raw, f"{name} must use CRLF line endings"
+        assert raw.count(b"\n") == raw.count(b"\r\n"), f"{name} contains a bare LF"
+    helper = (ROOT / "scripts" / "launch_workbench.cmd").read_bytes()
+    assert b'if defined RUN_LOG if exist "%RUN_LOG%" del /q "%RUN_LOG%"' in helper
