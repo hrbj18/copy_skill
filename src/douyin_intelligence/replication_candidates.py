@@ -60,6 +60,14 @@ class Candidate:
     #: so a future unit regression is attributable.  Empty when unknown.
     duration_source: str = ""
     source_keyword: str = ""
+    #: The material source this candidate came from (``"douyin"``, ``"bilibili"``,
+    #: ...).  This is the **cross-source dispatch and dedup key**: an id is only
+    #: unique *within* one source (Douyin ids are 19-digit numbers, Bilibili ids
+    #: are ``BV...`` strings), so a pool holding several sources must be keyed on
+    #: ``(source, video_id)`` and downloads must be dispatched by ``source``.
+    #: Defaults to ``"douyin"`` so every pre-existing single-source construction
+    #: keeps its historic meaning.
+    source: str = "douyin"
     media_url_present: bool = False
     aweme_type: str = ""
     media_is_audio: bool = False
@@ -299,6 +307,251 @@ def _planned_searched_keywords(budget: int) -> int:
     return max(0, int(budget) // 10)
 
 
+#: Sources whose signed download URL is captured **in memory during search**, so
+#: ``resolve_media_url`` is afterwards a pure lookup (no network, no failure).
+#: Every other source resolves lazily, one candidate at a time, at download time
+#: -- see :class:`~douyin_intelligence.sources.base.SourceAdapter`.  Only the
+#: former may be pre-resolved here; pre-resolving a lazy source would both hit
+#: the network during *collection* and defeat the memory-only URL contract.
+_URL_CAPTURED_SOURCES = frozenset({"douyin"})
+
+
+def _configured_sources(settings: dict[str, Any]) -> list[str]:
+    """``jobs.material_replication.sources`` as an ordered, de-duplicated list.
+
+    An absent (or unusable) value returns ``[]``, which keeps the legacy
+    Douyin-only path in charge: every config written before this feature has no
+    such key, and the default run must stay byte-identical.  Names are *not*
+    validated here (the config layer already rejects unknown names), so a name
+    that somehow got past validation degrades that one source instead of
+    aborting the whole pool.
+    """
+    raw = settings.get("sources")
+    if not isinstance(raw, list):
+        return []
+    names: list[str] = []
+    for item in raw:
+        name = str(item or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _build_source_adapter(name: str, deps: "ReplicationDeps | None") -> Any:
+    """Construct a *fresh* adapter for ``name`` (see ``sources.get_source``).
+
+    ``douyin`` keeps the injected-collector seam: a run whose ``deps`` carries a
+    fake collector must drive the Douyin adapter with it, otherwise a test that
+    configures ``sources`` would silently launch the real crawler instead.
+    """
+    from .sources import get_source
+
+    if name == "douyin":
+        collector = getattr(deps, "collector", None) if deps is not None else None
+        if collector is not None:
+            from .sources.douyin import DouyinSource
+
+            return DouyinSource(collector=collector)
+    return get_source(name)
+
+
+def _union_searched_keywords(requested: list[str], used_lists: list[list[str]]) -> list[str]:
+    """Ordered union of the keywords the sources actually searched.
+
+    Follows the ``requested`` order so the reported list still reads like the
+    request the user made, then appends anything a source reported that the
+    request never named -- no searched keyword is silently dropped, and a
+    keyword that only one source searched is still honestly reported as searched.
+    """
+    used: set[str] = {str(item) for values in used_lists for item in values}
+    ordered = [word for word in requested if word in used]
+    seen = set(ordered)
+    for values in used_lists:
+        for item in values:
+            if item not in seen:
+                seen.add(item)
+                ordered.append(item)
+    return ordered
+
+
+def _collect_from_sources(
+    config: dict[str, Any],
+    theme: str,
+    *,
+    keywords: list[str],
+    budget: int,
+    min_pool: int,
+    max_pool: int,
+    budget_warnings: list[str],
+    sources: list[str],
+    run_id: str | None,
+    deps: "ReplicationDeps | None",
+) -> dict[str, Any]:
+    """Fan out to every configured source and merge their candidates.
+
+    Shape mirrors :func:`collect_candidate_pool` (all pre-existing keys keep
+    their meaning) and adds one purely additive block, ``sources``: one record
+    per configured source with its own status, candidate count and keywords.  It
+    is returned at the top level *and* attached to ``search_report`` so the
+    pipeline's existing ``search_report.json`` write persists it with no change.
+
+    Degradation is per source: an unknown, misconfigured or broken source
+    contributes 0 candidates plus a warning naming it, and the remaining sources
+    still fill the pool.  Merging is keyed on ``(source, video_id)`` because an
+    id is only unique *within* one source.
+    """
+    requested = list(keywords)
+    records: list[dict[str, Any]] = []
+    report_by_source: dict[str, dict[str, Any]] = {}
+    adapters: dict[str, Any] = {}
+    merged: list[Candidate] = []
+    seen: set[tuple[str, str]] = set()
+    source_warnings: list[str] = []
+
+    for name in sources:
+        try:
+            adapter = _build_source_adapter(name, deps)
+            result = adapter.search(requested, budget, config=config, run_id=run_id)
+        except Exception as exc:  # unknown source / adapter blew up: skip it only
+            message = f"{type(exc).__name__}: {str(exc)[:200]}"
+            source_warnings.append(f"素材源 {name} 采集未成功：{message}（仅跳过该源）")
+            records.append({
+                "source": name, "status": "failed", "candidate_count": 0, "returned_count": 0,
+                "keywords_requested": list(requested), "keywords_used": [],
+                "keywords_truncated": bool(requested), "error": message,
+            })
+            continue
+
+        label = str(getattr(result, "source", "") or name)
+        adapters[label] = adapter
+        if isinstance(getattr(result, "report", None), dict):
+            report_by_source[label] = dict(result.report)
+        used = [str(item) for item in (getattr(result, "keywords_used", None) or [])]
+        asked = [str(item) for item in (getattr(result, "keywords_requested", None) or [])]
+        own = list(getattr(result, "candidates", None) or [])
+        added = 0
+        for candidate in own:
+            # Stamp the owning source on the candidate itself: adapters predating
+            # this field leave it at the ``"douyin"`` default, which would make a
+            # Bilibili candidate claim to be Douyin and collide with it.
+            candidate.source = label
+            video_id = str(getattr(candidate, "video_id", "") or "")
+            key = (label, video_id)
+            if not video_id or key in seen:
+                continue
+            seen.add(key)
+            merged.append(candidate)
+            added += 1
+        records.append({
+            "source": label,
+            "status": str(getattr(result, "status", "") or ""),
+            # ``candidate_count`` is how many of this source's candidates made it
+            # into the pool; ``returned_count`` is what the source itself
+            # returned.  Both are recorded so a drop caused by cross-source
+            # de-duplication can never look like "the source returned fewer".
+            "candidate_count": added,
+            "returned_count": len(own),
+            "keywords_requested": asked,
+            "keywords_used": used,
+            "keywords_truncated": len(asked) > len(used),
+            "error": str(getattr(result, "error", "") or ""),
+        })
+        source_warnings.extend(str(item) for item in (getattr(result, "warnings", None) or []))
+
+    # Rank across the *merged* pool: each adapter ranked its own candidates, so
+    # without this every source's best clip would report ``heat_score == 1.0``
+    # and the ranks would not be comparable between sources.
+    compute_heat_scores(merged)
+
+    searched = _union_searched_keywords(requested, [record["keywords_used"] for record in records])
+    failed = [record for record in records if record["status"] == "failed"]
+    all_failed = bool(records) and len(failed) == len(records)
+
+    # A Douyin crawl report is kept as the legacy ``search_report`` (so its
+    # ``per_keyword_budget`` / ``raw_request_ceiling`` attribution survives for
+    # every existing reader); when Douyin did not take part we synthesise the
+    # aggregate.  Either way the per-source truth rides along in ``sources``.
+    report: dict[str, Any] = dict(report_by_source.get("douyin") or {})
+    report.setdefault("status", "failed" if all_failed else "success")
+    report.setdefault("budget", budget)
+    report.setdefault("keywords", searched)
+    report["sources"] = records
+
+    # Only a *total* source wipe-out means "the crawl produced no keyword
+    # coverage"; one broken source among several must not be reported that way.
+    shortfall_report = dict(report)
+    shortfall_report["status"] = "failed" if all_failed else "success"
+
+    warnings: list[str] = list(budget_warnings)
+    warnings.extend(source_warnings)
+    if len(merged) < min_pool:
+        warnings.append(_pool_shortfall_warning(len(merged), min_pool, len(requested), len(searched), shortfall_report))
+    if len(requested) > len(searched) and len(merged) >= min_pool:
+        warnings.append(_keyword_truncation_warning(len(requested), len(searched)))
+    if failed:
+        names = "、".join(str(record["source"]) for record in failed)
+        # Say what actually happened to the *pool*, not just to the source: a
+        # surviving source that itself returned nothing must not be described as
+        # "the other sources still filled the pool".
+        outcome = (
+            f"其余源候选仍已入池（{len(merged)} 条）" if merged else "候选池未获得任何来源的候选"
+        )
+        warnings.append(
+            f"素材源失败 {len(failed)}/{len(records)}：{names}（{outcome}，"
+            f"详见 {FOLDER_PROCESS}/{SEARCH_REPORT_NAME}）"
+        )
+
+    if not merged:
+        status = "failed"
+    elif failed:
+        # Some source produced nothing: the pool is usable but not what the
+        # configured source set promised, so it must not read as a full success.
+        status = "partial"
+    else:
+        status = "success"
+
+    # Signed URLs are captured during search by the URL-capturing sources only;
+    # the rest stay unresolved until download (lazy, memory-only).
+    media_urls: dict[str, str] = {}
+    for candidate in merged:
+        if candidate.source not in _URL_CAPTURED_SOURCES:
+            continue
+        adapter = adapters.get(candidate.source)
+        if adapter is None:
+            continue
+        try:
+            url = str(adapter.resolve_media_url(candidate) or "")
+        except Exception:
+            url = ""
+        if url:
+            media_urls[candidate.video_id] = url
+
+    return {
+        "status": status,
+        "theme": theme,
+        "keywords": searched,
+        "keywords_used": searched,
+        "keywords_requested": requested,
+        "keywords_truncated": len(requested) > len(searched),
+        "budget": budget,
+        "min_pool_size": min_pool,
+        "max_pool_size": max_pool,
+        "candidates": merged,
+        "media_urls": media_urls,
+        "candidate_pool": {
+            "schema_version": 1,
+            "theme": theme,
+            "keywords": searched,
+            "keywords_requested": requested,
+            "pool_size": len(merged),
+            "candidates": [candidate.to_dict() for candidate in merged],
+        },
+        "search_report": report,
+        "sources": records,
+        "warnings": warnings,
+    }
+
+
 def collect_candidate_pool(
     config: dict[str, Any],
     theme: str,
@@ -313,6 +566,11 @@ def collect_candidate_pool(
     default) raises the pool ``budget`` so the crawler's ``budget // 10`` keyword
     slice reaches that many keywords -- never above ``max_pool_size``; when the cap
     prevents it a warning says so.  Unset, the budget is exactly as before.
+
+    ``jobs.material_replication.sources`` (optional list, unset by default) selects
+    the material sources to fan out to and merge -- see
+    :func:`_collect_from_sources`.  Unset, only Douyin runs, through the historic
+    inline path, byte for byte as before.
     """
     settings = (config.get("jobs") or {}).get("material_replication") or {}
     min_pool = int(settings.get("min_pool_size") or 40)
@@ -347,6 +605,19 @@ def collect_candidate_pool(
         except (TypeError, ValueError):
             publish_time_type = None
     keywords = expand_keywords(theme, config)
+    # ``jobs.material_replication.sources`` (optional list, unset by default) is
+    # the multi-source switch.  Absent -- the case for every config written
+    # before this feature -- the legacy Douyin-only body below runs untouched, so
+    # the default run stays byte-identical.  Present, the configured sources are
+    # fanned out and merged; Douyin then goes through ``DouyinSource`` (the same
+    # collector, same normalization) instead of the inline hard-wiring.
+    configured_sources = _configured_sources(settings)
+    if configured_sources:
+        return _collect_from_sources(
+            config, theme, keywords=list(keywords), budget=budget, min_pool=min_pool,
+            max_pool=max_pool, budget_warnings=budget_warnings, sources=configured_sources,
+            run_id=run_id, deps=deps,
+        )
     raw_rows: list[dict[str, Any]] = []
 
     def capture(files: list[Any]) -> None:
