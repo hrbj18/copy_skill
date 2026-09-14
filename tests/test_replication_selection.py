@@ -183,6 +183,136 @@ def test_select_material_replicas_applies_face_gate_and_author_dedup(tmp_path: P
     assert result["counters"]["face_errors"] == 0
 
 
+# --------------------------------------------------------------------------- #
+# Relevance gate: relevance stops being an ordering key and becomes an admission
+# --------------------------------------------------------------------------- #
+_THEME = "Microduck 机械鸭机器人"
+
+
+def _titled(video_id: str, title: str, *, author: str = "A", heat: float = 0.5) -> Candidate:
+    candidate = Candidate(video_id=video_id, title=title, author=author, digg_count=10, duration_seconds=60.0)
+    candidate.heat_score = heat
+    return candidate
+
+
+def _gate_deps(downloads: list[str]) -> types.SimpleNamespace:
+    def downloader(url, dest, cfg):
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_bytes(b"x")
+        downloads.append(Path(dest).stem)
+
+    return types.SimpleNamespace(
+        downloader=downloader,
+        prober=lambda path, cfg: {"duration_seconds": 60.0, "width": 1080, "height": 1920},
+        ocr=_FakeRunner({"items": [], "sampled_frames": 10}),
+        face_detector=_FreeFace(),
+        transcriber=_FakeRunner({"status": "no_speech", "text": "", "segments": []}),
+    )
+
+
+def _gate_candidates() -> list[Candidate]:
+    """One on-topic clip plus one unrelated clip that is *hotter* than it.
+
+    Heat desc used to be exactly why an unrelated clip got downloaded: the 9.14
+    Microduck pool's top 6 were all generic category terms.
+    """
+    return [
+        _titled("unrelated", "Unitree G1 人形机器人演示", author="A", heat=1.0),
+        _titled("related", "microduck 机器鸭开箱", author="B", heat=0.5),
+    ]
+
+
+def test_relevance_gate_is_off_without_the_switch_or_the_theme(tmp_path: Path, monkeypatch) -> None:
+    """Absent config key / absent ``theme`` ⇒ the pre-gate chain, byte for byte."""
+    config = _config(tmp_path)
+    candidates = _gate_candidates()
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_selection.compute_visual_metrics",
+        lambda *args, **kwargs: VisualMetrics(sampled_frames=10, motion_frame_ratio=0.8, ocr_text_frame_ratio=0.1, visual_ok=True),
+    )
+
+    no_theme = select_material_replicas(config, candidates, deps=_gate_deps([]))
+    no_switch = select_material_replicas(config, candidates, deps=_gate_deps([]), theme=_THEME)
+
+    assert no_theme["counters"]["rejected_relevance"] == 0
+    assert no_switch["counters"] == no_theme["counters"]
+    assert [item["candidate"].video_id for item in no_switch["selected"]] == [
+        item["candidate"].video_id for item in no_theme["selected"]
+    ]
+    assert not any(entry["stage"] == "relevance" for entry in no_switch["unmet"])
+
+    # An explicit enabled=false is the same no-op.
+    config["jobs"]["material_replication"]["relevance_gate"] = {"enabled": False}
+    disabled = select_material_replicas(config, candidates, deps=_gate_deps([]), theme=_THEME)
+    assert disabled["counters"] == no_theme["counters"]
+    assert [item["candidate"].video_id for item in disabled["selected"]] == [
+        item["candidate"].video_id for item in no_theme["selected"]
+    ]
+
+
+def test_relevance_gate_drops_an_unrelated_candidate_before_the_download(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    config["jobs"]["material_replication"]["relevance_gate"] = {"enabled": True}
+    candidates = _gate_candidates()
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_selection.compute_visual_metrics",
+        lambda *args, **kwargs: VisualMetrics(sampled_frames=10, motion_frame_ratio=0.8, ocr_text_frame_ratio=0.1, visual_ok=True),
+    )
+    downloads: list[str] = []
+
+    result = select_material_replicas(config, candidates, deps=_gate_deps(downloads), theme=_THEME)
+
+    assert [item["candidate"].video_id for item in result["selected"]] == ["related"]
+    assert result["counters"]["rejected_relevance"] == 1
+    assert result["counters"]["downloaded"] == 1
+    # The hotter but unrelated clip is refused before any traffic is spent.
+    assert downloads == ["related"]
+    entry = next(item for item in result["unmet"] if item["stage"] == "relevance")
+    assert entry["video_id"] == "unrelated"
+    assert entry["subject_hits"] == 0
+    assert "Microduck" in entry["reason"] and "未消耗流量" in entry["reason"]
+
+
+def test_relevance_gate_min_subject_hits_requires_more_than_one_term(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    config["jobs"]["material_replication"]["relevance_gate"] = {"enabled": True, "min_subject_hits": 2}
+    candidates = [
+        _titled("weak", "Microduck 新玩具上架", author="A", heat=1.0),  # hits 1 subject term
+        _titled("strong", "Microduck 机械鸭机器人开箱", author="B", heat=0.5),  # hits 2
+    ]
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_selection.compute_visual_metrics",
+        lambda *args, **kwargs: VisualMetrics(sampled_frames=10, motion_frame_ratio=0.8, ocr_text_frame_ratio=0.1, visual_ok=True),
+    )
+
+    result = select_material_replicas(config, candidates, deps=_gate_deps([]), theme=_THEME)
+
+    assert [item["candidate"].video_id for item in result["selected"]] == ["strong"]
+    rejected = next(item for item in result["unmet"] if item["stage"] == "relevance")
+    assert rejected["video_id"] == "weak" and rejected["subject_hits"] == 1
+    # Default threshold 1 would have admitted it (heat order: weak, strong).
+    config["jobs"]["material_replication"]["relevance_gate"] = {"enabled": True}
+    lenient = select_material_replicas(config, candidates, deps=_gate_deps([]), theme=_THEME)
+    assert [item["candidate"].video_id for item in lenient["selected"]] == ["weak", "strong"]
+    assert lenient["counters"]["rejected_relevance"] == 0
+
+
+def test_relevance_gate_stays_off_when_the_theme_yields_no_subject_term(tmp_path: Path, monkeypatch) -> None:
+    """A blank theme has nothing to match, so the gate must not empty the pool."""
+    config = _config(tmp_path)
+    config["jobs"]["material_replication"]["relevance_gate"] = {"enabled": True}
+    candidates = _gate_candidates()
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_selection.compute_visual_metrics",
+        lambda *args, **kwargs: VisualMetrics(sampled_frames=10, motion_frame_ratio=0.8, ocr_text_frame_ratio=0.1, visual_ok=True),
+    )
+
+    result = select_material_replicas(config, candidates, deps=_gate_deps([]), theme="   ")
+
+    assert result["counters"]["rejected_relevance"] == 0
+    assert len(result["selected"]) == 2
+
+
 def test_select_material_replicas_surfaces_per_video_face_errors(tmp_path: Path, monkeypatch) -> None:
     config = _config(tmp_path)
     candidates = [_candidate("v1", digg=100, author="A", duration=60, heat=0.5)]

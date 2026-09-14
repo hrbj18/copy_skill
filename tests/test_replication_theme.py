@@ -216,7 +216,7 @@ def test_subject_terms_returns_head_tokens_plus_aliases() -> None:
     # The stripped category word never becomes a relevance token.
     assert "机器人" not in subject_terms("Microduck 机械鸭机器人", config)
     assert subject_terms("iRobot Roomba 875 扫地机器人", config) == [
-        "iRobot", "Roomba", "875", "扫地机器人", "扫地机", "扫地机人",
+        "iRobot", "Roomba", "875", "扫地机器人", "扫地机",
     ]
     assert subject_terms("华为Mate XT2 非凡大师", config) == ["华为Mate", "XT2", "非凡大师"]
     assert subject_terms("   ", config) == []

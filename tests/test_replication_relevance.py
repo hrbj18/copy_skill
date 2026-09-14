@@ -165,6 +165,62 @@ def test_zero_live_terms_is_degraded_without_division_error() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Subject dimension: how much of the pool is on-topic at all
+# --------------------------------------------------------------------------- #
+def test_relevance_report_exposes_the_subject_dimension() -> None:
+    """``subject_hits`` / ``hit_ratio`` are independent of the term scores.
+
+    9.14 Microduck: every keyword scored 0 (whole-phrase matching) yet 52% of
+    titles contained ``microduck``.  The subject dimension is what makes that
+    visible instead of degrading into "the pool is undifferentiated".
+    """
+    candidates = [
+        _candidate("hit-alias", title="microduck 机器鸭开箱"),
+        _candidate("hit-head", title="Microduck 机械鸭机器人演示"),
+        _candidate("unrelated", title="Unitree G1 人形机器人演示"),
+    ]
+    report = relevance_report(candidates, "Microduck 机械鸭机器人")
+    assert report["subject_terms"] == ["Microduck", "机械鸭", "机器鸭", "机械鸭子"]
+    assert report["subject_hit_ids"] == ["hit-alias", "hit-head"]
+    assert report["subject_hits"] == 2
+    assert report["hit_ratio"] == round(2 / 3, 6)
+    # The stripped category word must never keep an unrelated clip alive.
+    assert "unrelated" not in report["subject_hit_ids"]
+    # ``config=None`` (the default) uses the built-in alias table.
+    assert relevance_report(candidates, "Microduck 机械鸭机器人", None, config=None)["subject_hits"] == 2
+
+
+def test_relevance_report_subject_dimension_on_an_empty_pool() -> None:
+    report = relevance_report([], "Microduck 机械鸭机器人")
+    assert report["subject_terms"] == ["Microduck", "机械鸭", "机器鸭", "机械鸭子"]
+    assert report["subject_hit_ids"] == [] and report["subject_hits"] == 0
+    assert report["hit_ratio"] == 0.0
+    assert report["scores"] == {} and report["degraded"] is True
+
+
+def test_relevance_report_subject_terms_honour_config_aliases() -> None:
+    config = load_config()
+    config["jobs"]["material_replication"]["subject_aliases"] = {"机械鸭": ["机器鸭", "DuckBot"]}
+    candidates = [_candidate("duck", title="DuckBot 开箱"), _candidate("other", title="Unitree G1 演示")]
+    report = relevance_report(candidates, "Microduck 机械鸭机器人", None, config=config)
+    assert "DuckBot" in report["subject_terms"] and "机械鸭子" not in report["subject_terms"]
+    assert report["subject_hit_ids"] == ["duck"]
+
+
+def test_relevance_report_keeps_the_pre_subject_fields_unchanged() -> None:
+    """The subject fields are additive: the scores/denominator contract is intact."""
+    candidates = [_candidate("a", title="苹果折叠屏开箱")]
+    report = relevance_report(candidates, "苹果折叠屏", ["苹果折叠屏", "Apple折叠屏"])
+    assert report["theme"] == "苹果折叠屏"
+    assert report["live_terms"] == ["苹果折叠屏"] and report["dead_terms"] == ["Apple折叠屏"]
+    assert report["scores"] == {"a": 1.0} and report["degraded"] is False
+    assert set(report) == {
+        "theme", "terms", "live_terms", "dead_terms", "live_count", "dead_count",
+        "degraded", "scores", "subject_terms", "subject_hit_ids", "subject_hits", "hit_ratio",
+    }
+
+
+# --------------------------------------------------------------------------- #
 # C: exclude-term gate
 # --------------------------------------------------------------------------- #
 def test_exclude_terms_helper_reads_dedups_and_accepts_a_bare_string() -> None:

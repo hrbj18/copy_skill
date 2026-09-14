@@ -597,6 +597,19 @@ def _dedup_terms(theme: str, keywords: list[str] | None) -> list[str]:
     return terms
 
 
+def subject_hit_count(candidate: Candidate, terms: list[str]) -> int:
+    """How many subject ``terms`` the candidate title mentions.
+
+    Same matcher as the relevance scores (:func:`term_hits_title`): one term hits
+    when *all* of its tokens occur in the title, so a single-token subject term
+    degrades to a plain substring test.  Used by the relevance gate, which must
+    answer "does this title mention the subject at all", independently of how
+    many search terms the pool happens to make live.
+    """
+    title_folded = str(getattr(candidate, "title", "") or "").casefold()
+    return sum(1 for term in terms if term_hits_title(term, title_folded))
+
+
 def candidate_relevance(candidate: Candidate, terms: list[str]) -> float:
     """Share of ``terms`` whose tokens all appear in the candidate title.
 
@@ -613,7 +626,11 @@ def candidate_relevance(candidate: Candidate, terms: list[str]) -> float:
 
 
 def relevance_report(
-    candidates: list[Candidate], theme: str, keywords: list[str] | None = None
+    candidates: list[Candidate],
+    theme: str,
+    keywords: list[str] | None = None,
+    *,
+    config: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Explainable relevance plus the *live-term* denominator it was scaled by.
 
@@ -628,9 +645,22 @@ def relevance_report(
     so the caller can surface "relevance could not discriminate this pool"
     without a division by zero.
 
+    The *subject* dimension answers a different question than the scores do: a
+    score is relative to however many terms the pool made live, while
+    ``subject_hit_ids`` / ``hit_ratio`` say how much of the pool mentions the
+    theme's subject at all (``replication_theme.subject_terms``).  The 9.14
+    Microduck run needed exactly that: every keyword scored 0 (whole-phrase
+    matching) yet 52% of titles contained ``microduck``, so the pool looked
+    undifferentiated while it was in fact half on-topic.  ``config`` only
+    supplies the optional ``subject_aliases`` dictionary; ``None`` works and
+    uses the built-in table.
+
     Returns ``{theme, terms, live_terms, dead_terms, live_count, dead_count,
-    degraded, scores}`` where ``scores`` is ``video_id -> float``.
+    degraded, scores, subject_terms, subject_hit_ids, subject_hits, hit_ratio}``
+    where ``scores`` is ``video_id -> float``.
     """
+    from .replication_theme import subject_terms as _subject_terms
+
     terms = _dedup_terms(theme, keywords)
     titles = {candidate.video_id: str(getattr(candidate, "title", "") or "").casefold() for candidate in candidates}
     live_terms = [term for term in terms if any(term_hits_title(term, text) for text in titles.values())]
@@ -642,6 +672,17 @@ def relevance_report(
         text = titles[candidate.video_id]
         hits = sum(1 for term in live_terms if term_hits_title(term, text))
         scores[candidate.video_id] = round(hits / live_count, 6) if live_count else 0.0
+
+    resolved_subject_terms = _subject_terms(theme, config or {})
+    subject_hit_ids: list[str] = []
+    seen_hit_ids: set[str] = set()
+    for candidate in candidates:
+        if candidate.video_id in seen_hit_ids:
+            continue
+        if subject_hit_count(candidate, resolved_subject_terms):
+            seen_hit_ids.add(candidate.video_id)
+            subject_hit_ids.append(candidate.video_id)
+    subject_hits = len(subject_hit_ids)
     return {
         "theme": theme,
         "terms": terms,
@@ -651,6 +692,10 @@ def relevance_report(
         "dead_count": len(dead_terms),
         "degraded": live_count == 0,
         "scores": scores,
+        "subject_terms": resolved_subject_terms,
+        "subject_hit_ids": subject_hit_ids,
+        "subject_hits": subject_hits,
+        "hit_ratio": round(subject_hits / len(candidates), 6) if candidates else 0.0,
     }
 
 
@@ -1365,14 +1410,20 @@ def select_material_replicas(
     budget: "DownloadBudget | None" = None,
     relevance: dict[str, float] | None = None,
     validation_store: list[dict[str, Any]] | None = None,
+    theme: str | None = None,
 ) -> dict[str, Any]:
     """Select 2~4 low-speech, face-acceptable, deduplicated material videos.
 
     Every dropped candidate is recorded in ``unmet`` as a structured
     ``{"video_id", "stage", "reason"}`` entry so an empty/insufficient material
     set is fully attributable downstream.  ``stage`` is one of ``pool``,
-    ``duration_pre``, ``author_duplicate``, ``invalid_media``, ``validation``,
-    ``duration``, ``face``, ``visual``, ``speech`` or ``quota``.
+    ``relevance``, ``not_video``, ``duration_pre``, ``author_duplicate``,
+    ``invalid_media``, ``validation``, ``duration``, ``face``, ``visual``,
+    ``speech`` or ``quota``.
+
+    ``theme`` enables the **relevance gate** (opt-in, see below): it must be the
+    same theme the pool was collected for.  ``None`` -- the pre-gate behaviour --
+    leaves the download chain untouched.
 
     ``validation_store`` collects the per-file download-validation records for
     the run-level ``validation.json``.
@@ -1394,7 +1445,20 @@ def select_material_replicas(
     its bytes were burned for nothing.  The ``duration_pre`` gate below moves the
     **material** window *ahead of the download* so such a candidate is dropped
     without any traffic; candidates whose metadata carries no duration keep the
-    original "download, then judge by the measured length" behaviour unchanged.
+    **Relevance gate** (``jobs.material_replication.relevance_gate``, optional
+    and off unless ``enabled`` is true **and** ``theme`` is given).  Relevance
+    used to be an ordering key only, so a candidate whose title never mentions
+    the subject was still downloaded -- merely last.  The 9.14 Microduck period
+    shipped zero on-topic material from a pool whose titles contained
+    ``microduck`` 52% of the time, because nothing ever *refused* an unrelated
+    clip.  With the gate on, a candidate whose title hits fewer than
+    ``min_subject_hits`` (default 1) of the theme's subject terms
+    (``replication_theme.subject_terms``) is recorded as
+    ``stage="relevance"`` and dropped **before any download**, so it costs
+    neither traffic nor a slot.  A theme that yields no subject term disables the
+    gate rather than rejecting the whole pool.  With the key absent -- every
+    config written before this feature -- nothing changes: the gate is off and
+    the chain is byte-for-byte the pre-gate one.
     """
     from .replication_theme import project_path
 
@@ -1431,6 +1495,19 @@ def select_material_replicas(
     if budget is not None:
         pool = ranked_candidates(pool, relevance)
     pool_ids = {candidate.video_id for candidate in pool}
+    # --- Relevance gate (optional; absent key == byte-identical run) ----------
+    # Resolved *before* the loop so the subject vocabulary (and the "is this pool
+    # on-topic at all" decision) is computed once, not per candidate.  A theme
+    # that yields no subject term cannot be gated against, so the gate stays off
+    # instead of rejecting every candidate.
+    gate_cfg = material_replication_settings(config).get("relevance_gate") or {}
+    gate_subject_terms: list[str] = []
+    if bool(gate_cfg.get("enabled")) and bool(theme):
+        gate_subject_terms = list(
+            relevance_report(candidates, str(theme), None, config=config)["subject_terms"]
+        )
+    gate_enabled = bool(gate_subject_terms)
+    min_subject_hits = max(1, int(gate_cfg.get("min_subject_hits") or 1))
     downloader = _downloader(deps)
     prober = _prober(deps)
     ocr_runner = _ocr(config, deps)
@@ -1450,6 +1527,7 @@ def select_material_replicas(
     rejected_duration = 0
     invalid_media = 0
     rejected_pool = 0
+    rejected_relevance = 0
     rejected_author_duplicate = 0
     rejected_visual = 0
     rejected_speech = 0
@@ -1507,6 +1585,21 @@ def select_material_replicas(
                 "aweme_type": str(getattr(candidate, "aweme_type", "") or ""),
             })
             continue
+        if gate_enabled:
+            subject_hits = subject_hit_count(candidate, gate_subject_terms)
+            if subject_hits < min_subject_hits:
+                rejected_relevance += 1
+                unmet.append({
+                    "video_id": candidate.video_id,
+                    "stage": "relevance",
+                    "reason": (
+                        f"标题仅命中主体词 {subject_hits} 个（门槛 {min_subject_hits}，"
+                        f"下载前判定，未消耗流量）；主体词：{'、'.join(gate_subject_terms)}"
+                    ),
+                    "subject_hits": subject_hits,
+                    "subject_terms": list(gate_subject_terms),
+                })
+                continue
         if author_counts.get(candidate.author, 0) >= max_per_author:
             rejected_author_duplicate += 1
             unmet.append({
@@ -1780,6 +1873,7 @@ def select_material_replicas(
         "rejected_not_video": rejected_not_video,
         "invalid_media": invalid_media,
         "rejected_pool": rejected_pool,
+        "rejected_relevance": rejected_relevance,
         "rejected_author_duplicate": rejected_author_duplicate,
         "rejected_visual": rejected_visual,
         "rejected_speech": rejected_speech,

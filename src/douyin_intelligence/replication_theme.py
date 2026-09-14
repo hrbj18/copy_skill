@@ -81,7 +81,7 @@ _CATEGORY_ATTRIBUTES: dict[str, tuple[str, ...]] = {
 # ``jobs.material_replication.subject_aliases`` (see ``_resolve_subject_aliases``).
 _SUBJECT_ALIASES: dict[str, tuple[str, ...]] = {
     "机械鸭": ("机器鸭", "Microduck", "机械鸭子"),
-    "扫地机器人": ("扫地机", "扫地机人"),
+    "扫地机器人": ("扫地机",),
     "折叠屏": ("折叠机", "折屏"),
 }
 
