@@ -22,6 +22,7 @@
 - `llm_analysis.py`, `local_secrets.py`: OpenAI-compatible structured analysis and secret-safe local configuration.
 - `visual_ocr.py`, `media_tools.py`, `materials.py`, `material_pipeline.py`, `media_processing.py`: bounded OCR/media tooling, caches and cleanup.
 - `replication_theme.py`, `replication_candidates.py`, `replication_selection.py`, `replication_script.py`, `replication_clips.py`, `replication_delivery.py`, `replication_pipeline.py`, `face_metrics.py`: theme-driven Douyin material replication (candidate pool, deterministic selection, heuristic script skeleton, face-free clip export, atomic delivery).
+- `sources/__init__.py`, `sources/base.py`, `sources/douyin.py`, `sources/ytdlp.py`, `sources/bilibili.py`: pluggable source registry (`SourceAdapter`, `MediaResolver`, `DownloadTarget`) plus Douyin (crawler wrapper), yt-dlp (YouTube `ytsearch`) and bilibili (stdlib wbi search) adapters; multi-source aggregation (`source_aggregation.py`) not yet implemented.
 - `config/content_intelligence.json`: non-secret V2.4 source, story, media and model budgets. `.env.local` and Cookie files are secrets; never read them for routine diagnosis.
 
 ## Verification commands

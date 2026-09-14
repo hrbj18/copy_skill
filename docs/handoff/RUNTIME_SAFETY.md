@@ -19,6 +19,14 @@
 - Disable pytest cache and Python bytecode during safety validation when a no-write audit is required.
 - Never combine real browser collection, paid model calls, scheduler installation, or unbounded media work with the offline unit suite.
 
+## Pluggable material sources
+
+- A source adapter must not raise through the pipeline: `search` returns `status="failed"` with an `error` string (a per-keyword failure is a warning), and only `MediaResolutionError` may surface per candidate.
+- Signed/expiring stream URLs are memory-only: they travel via `DownloadTarget.url` and must never reach `source_report.json`, `candidate_pool.json` or any report.
+- Each source supplies its own media `Referer` (`download_referer`): Douyin `https://www.douyin.com/`, bilibili `https://www.bilibili.com/`, yt-dlp none.
+- bilibili needs no login: `/x/web-interface/nav` returns `data.wbi_img` even at `code=-101`, so read the keys regardless of `code`.
+- bilibili: throttle between requests (default 2.0 s, `bilibili_sleep_seconds`) and back off on HTTP 412 (up to 4 attempts, `3 * attempt` s). 412 is rate control, not a missing header; it clears after a pause.
+
 ## Incident recovery
 
 - A Codex task interrupted after a tool call is not resumed if its session contains a call without a matching output.
