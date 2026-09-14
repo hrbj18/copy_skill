@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from douyin_intelligence import cli
 from douyin_intelligence.config import ConfigurationError, load_config
 from douyin_intelligence.replication_pipeline import ReplicationDeps, replication_doctor, run_material_replication
-from douyin_intelligence.replication_theme import expand_keywords
+from douyin_intelligence.replication_theme import expand_keywords, subject_terms
 
 _EXISTING_COMMANDS = (
     "doctor", "normalize", "run", "export-openmontage", "crawl-plan", "crawl", "browser-start",
@@ -373,6 +375,152 @@ def test_low_hit_ratio_warning_without_the_field_never_raises(tmp_path: Path, mo
     assert warning.startswith("题材相关度命中率过低：")
     assert "主体词命中率" not in warning
     assert "均未在任何候选标题中命中" not in warning
+
+
+# --------------------------------------------------------------------------- #
+# T3b / T6c: the automatic visual gate is wired in, and the manifest rows
+# carry provenance.  Off by default, so the whole feature is additive.
+# --------------------------------------------------------------------------- #
+@dataclass
+class _VisualDeps:
+    """The bundle handed to ``replication_visual.verify_videos(deps=...)``."""
+
+    frame_extractor: Any = None
+    ocr: Any = None
+
+
+def _visual_deps(text: str, *, frames: int = 3) -> _VisualDeps:
+    def extractor(video: Path, destination: Path) -> list[Path]:
+        written = []
+        for index in range(frames):
+            path = destination / f"frame-{index:02d}.jpg"
+            path.write_bytes(b"fake-jpeg")
+            written.append(path)
+        return written
+
+    def ocr(frame: Path) -> str:
+        return text
+    return _VisualDeps(frame_extractor=extractor, ocr=ocr)
+
+
+def _run_with_visual(
+    tmp_path: Path,
+    rows: list[dict],
+    *,
+    enabled: bool,
+    ocr_text: str,
+) -> tuple[dict, dict, dict]:
+    config = _config(tmp_path)
+    config["jobs"]["material_replication"]["visual_verify"] = {"enabled": enabled}
+    deps = _deps(tmp_path, rows)
+    deps.visual = _visual_deps(ocr_text)
+    result = run_material_replication(
+        config, "苹果折叠屏手机", business_date="2026-09-12", deps=deps,
+    )
+    output_dir = Path(result["output_dir"])
+    manifest = json.loads((output_dir / "清单.json").read_text(encoding="utf-8"))
+    payload = output_dir / "05-过程数据" / "visual_verify.json"
+    artifact = json.loads(payload.read_text(encoding="utf-8")) if payload.is_file() else None
+    return result, manifest, artifact
+
+
+def _assert_provenance_fields(rows: list[dict]) -> None:
+    """T6c: the additive row fields exist, with or without the visual gate."""
+    assert rows, "the fixture pool must deliver at least one source"
+    for row in rows:
+        assert row["title"]
+        assert int(row["bytes"]) > 0
+        assert row["published_at"]
+        assert row["source"] == "douyin"
+        assert isinstance(row["hit_ratio"], float)
+        assert "visual_verdict" in row
+
+
+def test_visual_gate_off_by_default_adds_fields_but_no_artifact(tmp_path: Path, monkeypatch) -> None:
+    _healthy_tooling(monkeypatch)
+    rows = _themed_rows("苹果折叠屏手机 上手")
+    result, manifest, artifact = _run_with_visual(tmp_path, rows, enabled=False, ocr_text="机械鸭")
+
+    # Off == the feature does not exist: no artifact, no manifest block, and the
+    # per-row verdict stays null...
+    assert artifact is None
+    assert "visual_verify" not in manifest
+    assert all(row["visual_verdict"] is None for row in manifest["material_replica_sources"])
+    assert not [item for item in result["warnings"] if "视觉确认" in item]
+    # ...while the purely additive provenance fields are always present.
+    _assert_provenance_fields(manifest["material_replica_sources"])
+
+
+def test_visual_gate_conclusive_does_not_change_degraded(tmp_path: Path, monkeypatch) -> None:
+    """A conclusive batch is recorded and changes nothing else."""
+    _healthy_tooling(monkeypatch)
+    rows = _themed_rows("苹果折叠屏手机 上手")
+    terms = subject_terms("苹果折叠屏手机", _config(tmp_path))
+    assert terms, "the theme must yield a subject vocabulary"
+    result, manifest, artifact = _run_with_visual(
+        tmp_path, rows, enabled=True, ocr_text=f"{terms[0]} 开箱演示",
+    )
+
+    assert artifact is not None and artifact["enabled"] is True
+    assert artifact["conclusive"] is True
+    assert [item["verdict"] for item in artifact["items"]] == ["hit"] * len(artifact["items"])
+    assert all(item["frames"] == 3 for item in artifact["items"])
+    assert manifest["visual_verify"]["conclusive"] is True
+    assert all(row["visual_verdict"] == "hit" for row in manifest["material_replica_sources"])
+    assert not [item for item in result["warnings"] if "视觉确认" in item]
+    # conclusive=True is not a degradation signal.
+    assert result["degraded"] is False and manifest["degraded"] is False
+    _assert_provenance_fields(manifest["material_replica_sources"])
+
+
+def test_visual_gate_inconclusive_warns_but_keeps_material(tmp_path: Path, monkeypatch) -> None:
+    """``conclusive=False`` annotates; it never removes material or degrades."""
+    _healthy_tooling(monkeypatch)
+    rows = _themed_rows("苹果折叠屏手机 上手")
+    result, manifest, artifact = _run_with_visual(
+        tmp_path, rows, enabled=True, ocr_text="机械鸭机器人 演示",
+    )
+
+    assert artifact is not None and artifact["conclusive"] is False
+    assert [item["verdict"] for item in artifact["items"]] == ["miss"] * len(artifact["items"])
+    assert manifest["visual_verify"]["conclusive"] is False
+    # Every selected source is still delivered, and its row records the verdict.
+    assert manifest["material_replica_sources"]
+    assert all(row["visual_verdict"] == "miss" for row in manifest["material_replica_sources"])
+    output_dir = Path(result["output_dir"])
+    assert manifest["source_retention"]["selected_count"] >= 1
+    assert list((output_dir / "04-原片").glob("*.mp4"))
+    warning = next(item for item in result["warnings"] if "视觉确认不结论" in item)
+    assert "条源片均未在画面文字中命中主体词" in warning
+    # Inconclusive visual evidence is a *separate* signal from relevance.
+    assert result["degraded"] is False and manifest["degraded"] is False
+    _assert_provenance_fields(manifest["material_replica_sources"])
+
+
+def test_visual_gate_never_raises_out_of_the_run(tmp_path: Path, monkeypatch) -> None:
+    """A broken visual bundle degrades that step only, never the whole run."""
+    _healthy_tooling(monkeypatch)
+    rows = _themed_rows("苹果折叠屏手机 上手")
+    config = _config(tmp_path)
+    config["jobs"]["material_replication"]["visual_verify"] = {"enabled": True}
+    deps = _deps(tmp_path, rows)
+
+    class _Boom:
+        def __getattr__(self, name: str) -> Any:
+            raise RuntimeError("视觉依赖不可用")
+
+    deps.visual = _Boom()
+    result = run_material_replication(
+        config, "苹果折叠屏手机", business_date="2026-09-12", deps=deps,
+    )
+
+    output_dir = Path(result["output_dir"])
+    manifest = json.loads((output_dir / "清单.json").read_text(encoding="utf-8"))
+    artifact = json.loads((output_dir / "05-过程数据" / "visual_verify.json").read_text(encoding="utf-8"))
+    assert artifact["conclusive"] is False
+    assert any("视觉确认未能完成" in item for item in result["warnings"])
+    assert all(row["visual_verdict"] is None for row in manifest["material_replica_sources"])
+    _assert_provenance_fields(manifest["material_replica_sources"])
 
 
 def test_script_not_found_is_attributable_in_manifest_and_run_log(tmp_path: Path, monkeypatch) -> None:

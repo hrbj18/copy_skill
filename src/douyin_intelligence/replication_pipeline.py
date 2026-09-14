@@ -64,7 +64,7 @@ from .replication_selection import (
     select_script_replica,
     validate_probe,
 )
-from .replication_theme import delivery_folder_name, project_path, sanitize_theme
+from .replication_theme import delivery_folder_name, project_path, sanitize_theme, subject_terms
 from .replication_validation import (
     build_validation_block,
     record_validation,
@@ -73,6 +73,7 @@ from .replication_validation import (
     validation_reason,
     write_validation_artifact,
 )
+from .replication_visual import verify_videos, visual_verify_settings
 
 
 _FACE_RANK = {FACE_FREE: 0, "low_face": 1, "face_heavy": 2, FACE_UNAVAILABLE: 3}
@@ -95,6 +96,11 @@ class ReplicationDeps:
     #: Whole-download-validation effect.  ``None`` runs the real ffprobe+ffmpeg
     #: layer; a callable replaces it entirely (offline tests).
     validator: Any = None
+    #: Bundle passed straight to ``replication_visual.verify_videos(deps=...)``;
+    #: ``None`` runs the real ffmpeg + RapidOCR path.  It is a *separate* bundle
+    #: and not ``ocr``: that one is a ``KeyframeOCR``-style object with ``run()``,
+    #: while the visual gate wants a plain ``ocr(frame_path) -> str``.
+    visual: Any = None
 
 
 def _now_iso(config: dict[str, Any]) -> str:
@@ -157,6 +163,62 @@ def _source_copy_name(candidate: Candidate) -> str:
     author = sanitize_theme(candidate.author, max_length=20) or "作者"
     title = sanitize_theme(candidate.title, max_length=20) or "作品"
     return f"{author}_{title}_{candidate.video_id}.mp4"
+
+
+def _visual_verify_payload(
+    config: dict[str, Any],
+    ordered: list[dict[str, Any]],
+    theme: str,
+    deps: "ReplicationDeps | None",
+    warnings: list[str],
+) -> dict[str, Any] | None:
+    """Run the automatic visual gate over the *selected* source videos.
+
+    Returns the payload for ``05-过程数据/visual_verify.json``, or ``None`` when the
+    gate is switched off: off has to stay byte-for-byte equivalent to the feature
+    not existing, which includes "no artifact appears in the delivery".
+
+    A ``conclusive=False`` result never removes material (a product name that only
+    appears on screen without text is a normal case) and never touches the
+    top-level ``degraded`` -- that flag already carries "relevance could not
+    discriminate the pool", and folding a second, unrelated signal into it would
+    destroy the distinction.  It is surfaced as a warning plus a manifest block.
+    """
+    if not visual_verify_settings(config).get("enabled", False):
+        return None
+
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for item in ordered:
+        video_id = str(item["candidate"].video_id)
+        if video_id in seen:
+            continue
+        seen.add(video_id)
+        paths.append(Path(item["video_path"]))
+    # ``subject_terms`` already case-folds; ``verify_videos`` compares substrings
+    # against case-folded text, so the vocabulary is passed through as-is.
+    terms = [term.casefold() for term in subject_terms(theme, config)]
+    try:
+        payload = verify_videos(paths, terms, config, deps=getattr(deps, "visual", None))
+    except Exception as exc:  # ``verify_videos`` promises not to raise; belt and braces
+        warnings.append(f"视觉确认未能完成：{type(exc).__name__}: {str(exc)[:160]}")
+        return {"enabled": True, "conclusive": False, "items": [], "error": type(exc).__name__}
+
+    if not payload["conclusive"]:
+        warnings.append(
+            f"视觉确认不结论：{len(payload['items'])} 条源片均未在画面文字中命中主体词"
+        )
+    return payload
+
+
+def _visual_verdicts(payload: dict[str, Any] | None) -> dict[str, str]:
+    """``video_id -> verdict`` for the rows of ``material_replica_sources``."""
+    if not payload:
+        return {}
+    return {
+        str(item.get("video_id")): str(item.get("verdict"))
+        for item in payload.get("items") or []
+    }
 
 
 def _prefilter_config_snapshot(config: dict[str, Any]) -> dict[str, Any]:
@@ -960,6 +1022,14 @@ def run_material_replication(
     main_dir = stage / FOLDER_MAIN
     support_dir = stage / FOLDER_SUPPORT
     source_dir = stage / FOLDER_SOURCE
+    # Automatic visual confirmation of the selected source clips (on-screen text
+    # only -- no VLM on this machine).  It runs before any copy/export so the
+    # per-row ``visual_verdict`` and the manifest summary are already known, and
+    # it writes nothing at all when the gate is off.
+    visual_payload = _visual_verify_payload(config, ordered, theme, deps, warnings)
+    if visual_payload is not None:
+        atomic_write_json(process_dir / "visual_verify.json", visual_payload)
+    visual_verdicts = _visual_verdicts(visual_payload)
     main_materials: list[dict[str, Any]] = []
     supporting_materials: list[dict[str, Any]] = []
     material_sources: list[dict[str, Any]] = []
@@ -1008,6 +1078,19 @@ def run_material_replication(
             "truncated": bool(face.get("truncated", False)),
             "low_confidence": bool(face.get("low_confidence", False)),
             "selected_reason": item.get("selected_reason", ""),
+            # Additive provenance fields: a reader of the manifest can now tell
+            # *what* was delivered (title), how big it is, when it was published,
+            # where it came from, how well the pool matched the subject, and
+            # whether the frames carried the subject on screen.  ``source`` falls
+            # back for pools built before multi-source existed; ``hit_ratio`` /
+            # ``visual_verdict`` are ``None`` when the corresponding gate did not
+            # produce a verdict for this row.
+            "title": candidate.title,
+            "bytes": file_size(item["video_path"]),
+            "published_at": candidate.published_at,
+            "source": str(getattr(candidate, "source", "douyin") or "douyin"),
+            "hit_ratio": relevance_detail.get("hit_ratio"),
+            "visual_verdict": visual_verdicts.get(str(candidate.video_id)),
         })
 
         face_per_frame = face.get("face_per_frame") or []
@@ -1185,6 +1268,18 @@ def run_material_replication(
         ),
         "persistent_store": str(settings.get("media_root") or "data/media/material-replication"),
     }
+    if visual_payload is not None:
+        # Summary only: the per-clip OCR text and hit counts stay in
+        # ``05-过程数据/visual_verify.json`` so the manifest does not carry a
+        # second copy of it.  ``conclusive=False`` is recorded honestly here and
+        # deliberately *not* folded into ``degraded``.
+        manifest["visual_verify"] = {
+            "conclusive": bool(visual_payload["conclusive"]),
+            "verdicts": [
+                {"video_id": item.get("video_id"), "verdict": item.get("verdict")}
+                for item in visual_payload.get("items") or []
+            ],
+        }
     validation = validate_delivery_manifest(_write_manifest(stage, manifest))
     if validation["status"] != "pass":
         manifest["degraded"] = True
