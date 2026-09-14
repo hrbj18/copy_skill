@@ -27,6 +27,7 @@ from douyin_intelligence.config import load_config
 from douyin_intelligence.replication_candidates import Candidate
 from douyin_intelligence.sources.base import MediaResolutionError
 from douyin_intelligence.sources.bilibili import (
+    CONTENT_UNAVAILABLE_API_CODES,
     BilibiliSource,
     compute_w_rid,
     mixin_key_from,
@@ -399,13 +400,14 @@ def test_resolve_raises_on_view_transport_failure() -> None:
         source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb"))
 
 
-def test_resolve_raises_on_view_api_error_code() -> None:
+def test_resolve_raises_on_view_rate_limit_code() -> None:
+    # A channel-level code on /view (e.g. -412 intercepted) -> raise.
     source, _fetcher, _sleeper = _make_source(
         [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
-         (VIEW_FRAG, (200, {"code": -404, "message": "啥都木有"}))]
+         (VIEW_FRAG, (200, {"code": -412, "message": "请求被拦截"}))]
     )
     with pytest.raises(MediaResolutionError):
-        source.resolve_media_url(Candidate(video_id="BVgone"))
+        source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb"))
 
 
 def test_resolve_raises_on_playurl_transport_failure() -> None:
@@ -418,11 +420,44 @@ def test_resolve_raises_on_playurl_transport_failure() -> None:
         source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb"))
 
 
-def test_resolve_raises_on_playurl_api_error_code() -> None:
+def test_resolve_raises_on_playurl_unknown_code() -> None:
+    # An unknown non-zero code is treated as a channel failure -> raise.
     source, _fetcher, _sleeper = _make_source(
         [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
          (VIEW_FRAG, (200, {"code": 0, "data": {"cid": 41685224881}})),
-         (PLAYURL_FRAG, (200, {"code": 87007, "message": "付费视频"}))]
+         (PLAYURL_FRAG, (200, {"code": 12345, "message": "未知错误"}))]
+    )
+    with pytest.raises(MediaResolutionError):
+        source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb"))
+
+
+@pytest.mark.parametrize("code", sorted(CONTENT_UNAVAILABLE_API_CODES))
+def test_resolve_content_level_code_returns_empty(code: int) -> None:
+    # A content-level code (deleted / private / paid ...) is a normal miss: ""
+    # and NOT an exception, whichever endpoint reports it.
+    source, _fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (VIEW_FRAG, (200, {"code": code, "message": "内容不可用"}))]
+    )
+    assert source.resolve_media_url(Candidate(video_id="BVgone")) == ""
+
+
+def test_resolve_content_level_playurl_code_returns_empty() -> None:
+    # A valid cid but a content-level playurl code (87007 充电专属) -> "".
+    source, _fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (VIEW_FRAG, (200, {"code": 0, "data": {"cid": 41685224881}})),
+         (PLAYURL_FRAG, (200, {"code": 87007, "message": "充电专属视频"}))]
+    )
+    assert source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb")) == ""
+
+
+def test_resolve_rate_limit_playurl_code_raises() -> None:
+    # -509 请求超频 -> channel-level -> raise.
+    source, _fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (VIEW_FRAG, (200, {"code": 0, "data": {"cid": 41685224881}})),
+         (PLAYURL_FRAG, (200, {"code": -509, "message": "请求超频"}))]
     )
     with pytest.raises(MediaResolutionError):
         source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb"))

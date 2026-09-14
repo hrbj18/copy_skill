@@ -98,6 +98,28 @@ MAX_PAGE_SIZE = 20
 #: ones are reported as truncated) so a large theme list cannot trip risk control.
 MAX_KEYWORDS = 8
 
+#: bilibili API ``code`` values that mean **"this candidate has no usable
+#: media"** (as opposed to "the source is broken").  A content-level failure is a
+#: normal miss: :meth:`BilibiliSource.resolve_media_url` returns ``""`` and the
+#: caller simply moves to the next candidate -- it must not raise, warn or trip
+#: a back-off.  Every *other* non-zero ``code`` is a channel-level failure
+#: (risk control, rate limiting, ...) and raises
+#: :class:`~douyin_intelligence.sources.base.MediaResolutionError`.
+#:
+#: This is the minimal set known from bilibili's documented semantics; extend it
+#: from real observations.  The raised error carries the raw ``code`` and
+#: ``message`` so a newly-seen content code can be spotted in the logs and added
+#: here.
+CONTENT_UNAVAILABLE_API_CODES: frozenset[int] = frozenset(
+    {
+        -404,  # 稿件不存在
+        -403,  # 权限不足
+        87007,  # 充电专属（付费）
+        62002,  # 稿件不可见
+        62004,  # 稿件审核中
+    }
+)
+
 
 # --------------------------------------------------------------------------- #
 # Pure wbi signing (unit-tested in isolation)
@@ -502,18 +524,23 @@ class BilibiliSource:
         return img_key, sub_key
 
     def _fetch_cid(self, bvid: str, headers: dict[str, str]) -> int:
-        """Return the ``cid`` for ``bvid`` (``0`` when the API has no data).
+        """Return the ``cid`` for ``bvid``.
 
-        Raises :class:`MediaResolutionError` on a transport failure or a
-        non-zero API ``code`` -- that is a *source* problem, not "no media".
+        * content-level ``code`` (see :data:`CONTENT_UNAVAILABLE_API_CODES`) or
+          ``code=0`` with no ``cid`` -> ``0`` (the caller maps it to ``""``);
+        * transport failure or any *other* non-zero ``code`` -> raise
+          :class:`MediaResolutionError`.
         """
         url = f"{VIEW_ENDPOINT}?{urllib.parse.urlencode({'bvid': bvid})}"
         status, payload = self._http(url, headers)
         if status != 200 or not isinstance(payload, dict):
             raise MediaResolutionError(f"bilibili：view 接口调用失败（HTTP {status}）")
         if payload.get("code") != 0:
+            code = payload.get("code")
+            if code in CONTENT_UNAVAILABLE_API_CODES:
+                return 0  # content-level: no usable media -> "" upstream
             raise MediaResolutionError(
-                f"bilibili：view 接口返回错误码 {payload.get('code')}（{payload.get('message') or ''}）"
+                f"bilibili：view 接口返回错误码 {code}（{payload.get('message') or ''}）"
             )
         data = payload.get("data")
         cid = data.get("cid") if isinstance(data, dict) else None
@@ -523,10 +550,12 @@ class BilibiliSource:
             return 0
 
     def _fetch_play_url(self, bvid: str, cid: int, headers: dict[str, str], mixin_key: str) -> str:
-        """Return the stream URL (``""`` when ``code=0`` but there is no stream).
+        """Return the stream URL, or ``""`` when the candidate has no stream.
 
-        Raises :class:`MediaResolutionError` on a transport failure or a
-        non-zero API ``code``.
+        * content-level ``code`` (see :data:`CONTENT_UNAVAILABLE_API_CODES`) or
+          ``code=0`` with no ``durl``/``dash`` -> ``""``;
+        * transport failure or any *other* non-zero ``code`` -> raise
+          :class:`MediaResolutionError`.
         """
         params = {"bvid": bvid, "cid": cid, "qn": 32, "fnval": 1, "fourk": 0}
         signed = sign_params(params, mixin_key)
@@ -535,8 +564,11 @@ class BilibiliSource:
         if status != 200 or not isinstance(payload, dict):
             raise MediaResolutionError(f"bilibili：playurl 接口调用失败（HTTP {status}）")
         if payload.get("code") != 0:
+            code = payload.get("code")
+            if code in CONTENT_UNAVAILABLE_API_CODES:
+                return ""  # content-level: no usable media -> normal miss
             raise MediaResolutionError(
-                f"bilibili：playurl 接口返回错误码 {payload.get('code')}（{payload.get('message') or ''}）"
+                f"bilibili：playurl 接口返回错误码 {code}（{payload.get('message') or ''}）"
             )
         data = payload.get("data")
         if not isinstance(data, dict):
