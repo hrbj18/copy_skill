@@ -6,7 +6,8 @@ tests pin:
 
 * the ``wbi`` signature (a pure function -- if it is wrong everything is wrong);
 * the ``-101`` ``/nav`` trap (the keys must be read from a *guest* response);
-* mapping/stripping of the search results;
+* mapping/stripping of the search results, including each candidate's own
+  ``source`` label (the cross-source dedup/dispatch key);
 * the 412 back-off path (retry, then degrade to ``warnings`` -- never raise);
 * the disk-safety whitelist (no URL / ``wbi`` key / cookie ever reaches the
   report);
@@ -237,6 +238,30 @@ def test_search_maps_candidates_and_strips_highlight() -> None:
 
     assert len(fetcher.calls_for(SEARCH_FRAG)) == 3
     assert sleeper.calls  # requests were throttled
+
+
+def test_candidates_carry_their_own_source_label() -> None:
+    """Every Bilibili candidate must be labelled ``source="bilibili"``.
+
+    ``Candidate.source`` defaults to ``"douyin"`` and doubles as the cross-source
+    dedup *and* dispatch key, so an unlabelled bvid would be keyed as
+    ``("douyin", "BV...")`` and handed to the Douyin downloader.
+    """
+    direct = BilibiliSource()._to_candidate(_item("BV1uUbG6FEfb", "机器鸭"), "机器鸭")
+    assert direct is not None
+    assert direct.source == "bilibili"
+
+    by_keyword = {"机器鸭": [_item("BV1uUbG6FEfb", "机器鸭 实测")]}
+    source, _fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (SEARCH_FRAG, _search_handler(by_keyword))]
+    )
+
+    result = source.search(["机器鸭"], 40, config=load_config())
+
+    assert [candidate.source for candidate in result.candidates] == ["bilibili"]
+    # The label also survives serialization into ``candidate_pool.json``.
+    assert result.candidates[0].to_dict()["source"] == "bilibili"
 
 
 def test_nav_minus_101_still_yields_wbi_keys() -> None:

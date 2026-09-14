@@ -50,13 +50,13 @@ def _row(video_id: str, *, url: str = "") -> dict:
     return row
 
 
-def _deps(tmp_path: Path) -> types.SimpleNamespace:
+def _deps(tmp_path: Path, video_id: str = VIDEO_ID) -> types.SimpleNamespace:
     """Douyin's injected collector seam: writes one raw row before sanitizing."""
 
     source = tmp_path / "search" / "search_contents_1.json"
     source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text(
-        json.dumps([_row(VIDEO_ID, url="https://signed.example/secret")], ensure_ascii=False),
+        json.dumps([_row(video_id, url="https://signed.example/secret")], ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -182,6 +182,38 @@ def test_same_video_id_from_two_sources_is_kept_once_per_source(tmp_path: Path) 
     # duplicate must not survive.
     assert ids.count(VIDEO_ID) == 2
     assert ids.count(BV_ID) == 1
+
+
+def test_identical_id_string_from_two_sources_is_two_candidates(tmp_path: Path) -> None:
+    """The composite key must not depend on the id *shape*.
+
+    Adversarial form of the test above: the Douyin row and the Bilibili item
+    carry the **very same id string**.  If a candidate were keyed on the id alone
+    -- or if the Bilibili candidate had kept the ``Candidate.source`` default and
+    been mislabelled ``douyin`` -- one of the two would silently disappear.
+    """
+    config = _config(tmp_path)
+    config["jobs"]["material_replication"]["sources"] = ["douyin", "bilibili"]
+
+    from douyin_intelligence.sources.bilibili import BilibiliSource
+
+    bilibili_candidate = BilibiliSource()._to_candidate(
+        {"bvid": BV_ID, "title": "机器鸭", "author": "AI研究室", "duration": "03:01"}, "机器鸭",
+    )
+    assert bilibili_candidate is not None
+    assert bilibili_candidate.source == "bilibili"
+
+    stub_result = {
+        "source": "bilibili", "status": "success", "candidates": [bilibili_candidate],
+        "keywords_used": ["机器鸭"], "report": {},
+    }
+    with patch("douyin_intelligence.sources.get_source", side_effect=_stub_factory(stub_result)):
+        pool = collect_candidate_pool(
+            config, "机器鸭", pool_size=40, run_id="clash", deps=_deps(tmp_path, video_id=BV_ID),
+        )
+
+    keys = {(candidate.source, candidate.video_id) for candidate in pool["candidates"]}
+    assert keys == {("douyin", BV_ID), ("bilibili", BV_ID)}
 
 
 def test_a_broken_or_unknown_source_degrades_that_source_only(tmp_path: Path) -> None:

@@ -310,6 +310,11 @@ class YtDlpSource:
             duration_seconds=self._as_float(entry.get("duration")),
             duration_source="ytdlp.duration" if entry.get("duration") else "",
             source_keyword=str(keyword),
+            # Explicit: ``Candidate.source`` defaults to ``"douyin"``, and this
+            # field is the cross-source dedup/dispatch key.  The ``yt-`` id prefix
+            # above already keeps ids from colliding, but the *label* must be
+            # right too or an id-based fallback dispatch would pick Douyin.
+            source=self.name,
             media_url_present=True,
         )
 

@@ -605,6 +605,11 @@ class BilibiliSource:
             duration_seconds=_parse_duration(item.get("duration")),
             duration_source="bilibili.duration" if item.get("duration") else "",
             source_keyword=str(keyword),
+            # Explicit: ``Candidate.source`` defaults to ``"douyin"``, and this
+            # field is the cross-source dedup/dispatch key -- a Bilibili bvid
+            # claiming to be Douyin would poison ``(source, video_id)`` and send
+            # the candidate to the Douyin downloader.
+            source=self.name,
             media_url_present=True,
         )
 
