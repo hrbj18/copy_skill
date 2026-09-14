@@ -48,7 +48,16 @@ def _config(tmp_path: Path) -> dict:
     config["_project_root"] = str(tmp_path)
     # These CLI tests inject a fake downloader that writes non-media bytes, so
     # isolate them from the download-validation layer (real ffprobe+ffmpeg).
-    config["jobs"]["material_replication"]["validation"] = {"enabled": False}
+    material = config["jobs"]["material_replication"]
+    material["validation"] = {"enabled": False}
+    # The shipped config switches the two download/selection gates on.  They are
+    # *decisions under their own tests* (here and in test_replication_selection.py);
+    # every other CLI test is about pipeline plumbing (attribution, counters,
+    # degradation, delivery), so the switches are pinned off here -- exactly the
+    # same isolation as ``validation`` above.  A test that wants a gate on turns
+    # it back on explicitly at its call site.
+    material["relevance_gate"] = {"enabled": False}
+    material["visual_verify"] = {"enabled": False}
     return config
 
 
@@ -436,7 +445,7 @@ def _assert_provenance_fields(rows: list[dict]) -> None:
         assert "visual_verdict" in row
 
 
-def test_visual_gate_off_by_default_adds_fields_but_no_artifact(tmp_path: Path, monkeypatch) -> None:
+def test_visual_gate_switch_off_adds_fields_but_no_artifact(tmp_path: Path, monkeypatch) -> None:
     _healthy_tooling(monkeypatch)
     rows = _themed_rows("苹果折叠屏手机 上手")
     result, manifest, artifact = _run_with_visual(tmp_path, rows, enabled=False, ocr_text="机械鸭")
@@ -521,6 +530,46 @@ def test_visual_gate_never_raises_out_of_the_run(tmp_path: Path, monkeypatch) ->
     assert any("视觉确认未能完成" in item for item in result["warnings"])
     assert all(row["visual_verdict"] is None for row in manifest["material_replica_sources"])
     _assert_provenance_fields(manifest["material_replica_sources"])
+
+
+def test_relevance_gate_bites_on_the_production_call_path(tmp_path: Path, monkeypatch) -> None:
+    """The theme must reach ``select_material_replicas``, or the gate is dead code.
+
+    ``select_material_replicas`` resolves ``gate_requested = enabled and bool(theme)``;
+    the pipeline call site therefore has to pass ``theme=``.  Without it the newly
+    shipped relevance gate silently never runs, which no unit test of the gate
+    itself would catch -- hence this end-to-end assertion.
+    """
+    _healthy_tooling(monkeypatch)
+    # Titles that hit no subject term of the theme -> every candidate is refused.
+    rows = _themed_rows("与主题完全无关的标题")
+    config = _config(tmp_path)
+    config["jobs"]["material_replication"]["relevance_gate"] = {"enabled": True}
+    result = run_material_replication(
+        config, "苹果折叠屏手机", business_date="2026-09-12", deps=_deps(tmp_path, rows),
+    )
+
+    output_dir = Path(result["output_dir"])
+    manifest = json.loads((output_dir / "清单.json").read_text(encoding="utf-8"))
+    rejected = [item for item in manifest["material_replica"]["rejected"] if item["stage"] == "relevance"]
+    assert rejected, "闸门未生效：主题没有传到 select_material_replicas（theme=theme 缺线）"
+    assert {item["video_id"] for item in rejected} == {"7300000000000000001", "7300000000000000002"}
+    assert all("主体词" in item["reason"] for item in rejected)
+
+
+def test_relevance_gate_switch_off_rejects_nothing(tmp_path: Path, monkeypatch) -> None:
+    """Switch off on the production call path: no ``relevance`` rejection at all."""
+    _healthy_tooling(monkeypatch)
+    rows = _themed_rows("与主题完全无关的标题")
+    config = _config(tmp_path)
+    config["jobs"]["material_replication"]["relevance_gate"] = {"enabled": False}
+    result = run_material_replication(
+        config, "苹果折叠屏手机", business_date="2026-09-12", deps=_deps(tmp_path, rows),
+    )
+    output_dir = Path(result["output_dir"])
+    manifest = json.loads((output_dir / "清单.json").read_text(encoding="utf-8"))
+
+    assert not [item for item in manifest["material_replica"]["rejected"] if item["stage"] == "relevance"]
 
 
 def test_script_not_found_is_attributable_in_manifest_and_run_log(tmp_path: Path, monkeypatch) -> None:

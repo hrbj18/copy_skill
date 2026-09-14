@@ -225,6 +225,9 @@ def _gate_candidates() -> list[Candidate]:
 def test_relevance_gate_is_off_without_the_switch_or_the_theme(tmp_path: Path, monkeypatch) -> None:
     """Absent config key / absent ``theme`` ⇒ the pre-gate chain, byte for byte."""
     config = _config(tmp_path)
+    # ``_config`` starts from the *shipped* config, which now carries the key:
+    # removing it is what makes "absent key" true here.
+    config["jobs"]["material_replication"].pop("relevance_gate", None)
     candidates = _gate_candidates()
     monkeypatch.setattr(
         "douyin_intelligence.replication_selection.compute_visual_metrics",
@@ -333,6 +336,7 @@ def test_relevance_gate_records_that_it_bit_in_the_stage_audit(tmp_path: Path, m
     assert result["counters"]["rejected_relevance"] == 1
     # A config without the switch keeps the historic stage payload untouched.
     plain = _config(tmp_path)
+    plain["jobs"]["material_replication"].pop("relevance_gate", None)
     without_switch = select_material_replicas(plain, _gate_candidates(), deps=_gate_deps([]), theme=_THEME)
     assert "relevance_gate" not in without_switch["stage"]
 

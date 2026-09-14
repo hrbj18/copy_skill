@@ -959,6 +959,7 @@ def run_material_replication(
     material_result = select_material_replicas(
         config, candidates, media_urls=media_urls, deps=deps, clock=active_clock,
         budget=budget, relevance=relevance, validation_store=validation_store,
+        theme=theme,
     )
     selected: list[dict[str, Any]] = material_result["selected"]
     insufficient = bool(material_result["insufficient"])
