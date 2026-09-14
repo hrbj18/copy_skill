@@ -205,11 +205,17 @@ def test_safe_launcher_error_has_finite_length() -> None:
 
 
 def test_launcher_scripts_are_crlf_and_guard_their_delete() -> None:
-    # A LF-only batch file makes cmd.exe mis-parse the launcher: ``cd /d`` and
-    # ``set "RUN_LOG=..."`` silently fail, so the trailing ``del /q "%RUN_LOG%"``
-    # degrades to ``del /q ""`` -- which deletes *every* file in the caller's
-    # working directory.  That is how a bare ``pytest tests`` once wiped the
-    # repository root.  Keep CRLF endings and never delete an empty target.
+    # ``del /q ""`` (empty target) is harmless on a cmd *command line* -- it only
+    # raises a syntax error.  Inside a *batch file* it is catastrophic: Del reads
+    # the empty quoted argument as "everything in the CWD" and deletes every file
+    # there -- never recursing, so subdirectories survive.
+    #
+    # The launcher used to be stored LF-only.  That made cmd's batch reader desync
+    # line by line under ``chcp 65001`` + CJK text: ``set "RUN_LOG=..."`` was
+    # swallowed and ``cd /d "%PROJECT_ROOT%"`` never ran, so the trailing
+    # ``del /q "%RUN_LOG%"`` degraded to ``del /q ""`` and executed in the
+    # *caller's* cwd.  A bare ``pytest tests`` runs the launcher with cwd=ROOT,
+    # which is how the repository root's top-level files got wiped.
     for name in ("启动工作台.bat", "科技内容情报工作台.cmd", "scripts/launch_workbench.cmd"):
         raw = (ROOT / name).read_bytes()
         assert b"\r\n" in raw, f"{name} must use CRLF line endings"

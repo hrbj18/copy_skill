@@ -1,0 +1,14 @@
+# Windows batch launchers MUST be checked out with CRLF endings.
+#
+# This repo runs with core.autocrlf=false, so git stores working-tree bytes
+# verbatim.  When these launchers were committed LF-only, cmd.exe mis-parsed
+# them under ``chcp 65001`` + CJK text: ``set "RUN_LOG=..."`` and
+# ``cd /d "%PROJECT_ROOT%"`` silently failed, so the trailing
+# ``del /q "%RUN_LOG%"`` degraded to ``del /q ""`` -- which deletes every file
+# in the current working directory.  A bare ``pytest tests`` ran the launcher
+# with cwd=ROOT, which is how the repository root's top-level files got wiped.
+#
+# ``eol=crlf`` forces CRLF on checkout, so a fresh clone can never reintroduce
+# the LF-only launcher that caused the data loss.
+*.bat text eol=crlf
+*.cmd text eol=crlf
