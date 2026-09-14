@@ -13,8 +13,10 @@ import re
 import statistics
 import subprocess
 from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+from zoneinfo import ZoneInfo
 
 from .face_metrics import (
     FACE_FREE,
@@ -27,6 +29,12 @@ from .face_metrics import (
 )
 from .materials import MediaTooLargeError
 from .replication_candidates import Candidate
+from .replication_dedup import (
+    cross_run_duplicate_reason,
+    dedup_enabled,
+    delivered_index_path,
+    load_delivered_index,
+)
 from .replication_validation import (
     record_validation,
     validate_candidate,
@@ -60,6 +68,90 @@ def script_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 def material_settings(config: dict[str, Any]) -> dict[str, Any]:
     return material_replication_settings(config).get("material_replica") or {}
+
+
+# --------------------------------------------------------------------------- #
+# Freshness gate (T6-1)
+#
+# ``material_replica.max_age_days`` (absent or ``0`` == **off**) drops a
+# candidate whose ``published_at`` is older than the window *before* it is
+# downloaded.  It is the one gate that can shrink the pool without spending a
+# byte on the wire, which is exactly why it ships switched off: two individually
+# reasonable gates already starved ``充电宝3C认证新规`` from 30/31 admissions to 0,
+# so the window is set from behind a measurement, never by default.
+# --------------------------------------------------------------------------- #
+def material_max_age_days(material: dict[str, Any]) -> int:
+    """``material_replica.max_age_days``; ``0`` means "do not judge freshness"."""
+    raw = material.get("max_age_days", 0)
+    if raw is None or raw == "":
+        return 0
+    try:
+        days = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("素材时效闸门 max_age_days 必须是整数（0 表示不过滤）") from exc
+    if days < 0:
+        raise ValueError("素材时效闸门 max_age_days 必须 ≥ 0（0 表示不过滤）")
+    return days
+
+
+def published_age_days(candidate: Candidate, now: datetime, zone: ZoneInfo) -> float | None:
+    """How old ``candidate`` is, or ``None`` when it carries no usable date.
+
+    ``None`` means "cannot judge" and callers must let the candidate through.
+    ``published_at`` is only as trustworthy as the collector that filled it, and
+    refusing an undated clip would turn one missing field into a silent material
+    famine -- the same honesty contract ``duration_pre`` follows for durations.
+    """
+    text = str(getattr(candidate, "published_at", "") or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=zone)
+    return (now - parsed).total_seconds() / 86400.0
+
+
+def freshness_block(
+    max_days: int, ages_before: list[float], ages_after: list[float], undated: int
+) -> dict[str, Any]:
+    """The run-level ``material_freshness`` audit for the manifest.
+
+    The two medians are the whole point: a gate can trim the tail while leaving
+    the *median* clip as old as it always was, so reporting only the kept count
+    would let a run claim freshness it does not have.
+    """
+    judged = len(ages_before)
+    rejected = judged - len(ages_after)
+    return {
+        "max_age_days": max_days,
+        "judged": judged,
+        "rejected": rejected,
+        "undated": undated,
+        "stale_ratio": round(rejected / judged, 4) if judged else 0.0,
+        "oldest_age_days": round(max(ages_before), 3) if ages_before else None,
+        "median_age_days_before": round(float(statistics.median(ages_before)), 3) if ages_before else None,
+        "median_age_days_after": round(float(statistics.median(ages_after)), 3) if ages_after else None,
+    }
+
+
+def _freshness_now(config: dict[str, Any], zone: ZoneInfo) -> datetime:
+    """The gate's reference instant, as "now" in the configured timezone.
+
+    ``config["_now"]`` is the test seam -- the same shape as the injected
+    ``config["_project_root"]`` that :func:`replication_theme.project_path`
+    honours.  It must *not* be confused with the ``clock`` argument of
+    ``select_material_replicas``, which is a monotonic *float* clock used by the
+    phase budgets and knows nothing about wall time.
+    """
+    injected = config.get("_now")
+    if injected is not None:
+        value = injected() if callable(injected) else injected
+        if isinstance(value, datetime):
+            return value if value.tzinfo is not None else value.replace(tzinfo=zone)
+    return datetime.now(zone)
 
 
 def validate_probe(probe: dict[str, Any] | None) -> tuple[bool, str]:
@@ -1445,9 +1537,9 @@ def select_material_replicas(
     Every dropped candidate is recorded in ``unmet`` as a structured
     ``{"video_id", "stage", "reason"}`` entry so an empty/insufficient material
     set is fully attributable downstream.  ``stage`` is one of ``pool``,
-    ``relevance``, ``not_video``, ``duration_pre``, ``author_duplicate``,
-    ``invalid_media``, ``validation``, ``duration``, ``face``, ``visual``,
-    ``speech`` or ``quota``.
+    ``relevance``, ``not_video``, ``cross_run_duplicate``, ``stale``,
+    ``duration_pre``, ``author_duplicate``, ``invalid_media``, ``validation``,
+    ``duration``, ``face``, ``visual``, ``speech`` or ``quota``.
 
     ``theme`` enables the **relevance gate** (opt-in, see below): it must be the
     same theme the pool was collected for.  ``None`` -- the pre-gate behaviour --
@@ -1455,6 +1547,19 @@ def select_material_replicas(
 
     ``validation_store`` collects the per-file download-validation records for
     the run-level ``validation.json``.
+
+    Two further gates are **off unless their key is present**, and both are
+    judged before a single byte is downloaded:
+
+    * ``material_replica.max_age_days`` (absent or ``0`` == off) refuses a clip
+      whose ``published_at`` is older than the window (``stage="stale"``) and
+      reports the pool's before/after age medians as ``freshness`` /
+      ``stage["material_freshness"]``, because trimming the tail does not by
+      itself make the *median* clip younger;
+    * ``jobs.material_replication.dedup_across_runs`` (absent == off) refuses a
+      clip an earlier period already delivered (``stage="cross_run_duplicate"``),
+      reading ``<cache_root>/delivered_index.json`` -- see
+      :mod:`douyin_intelligence.replication_dedup` for the file contract.
 
     Two *different* duration windows guard this chain and they must never be
     conflated:
@@ -1522,11 +1627,40 @@ def select_material_replicas(
     min_delivered_bytes = int(material.get("min_delivered_bytes") or 0)
     max_delivered_bytes = int(material.get("max_delivered_bytes") or 0)
     max_selected_count = int(material.get("max_selected_count") or 0)
+    # --- Freshness window (optional; absent/0 == byte-identical run) ----------
+    # ``max_age_days`` is resolved once, here, so "is the gate on at all" is
+    # decided in a single place instead of per candidate.
+    max_age_days = material_max_age_days(material)
 
     pool, median = material_candidate_pool(candidates, config)
     if budget is not None:
         pool = ranked_candidates(pool, relevance)
     pool_ids = {candidate.video_id for candidate in pool}
+    # --- Freshness pre-pass (runs only when the gate is on) ------------------
+    # Ages are computed once for the whole pool so the loop can look them up and
+    # the manifest can report *before/after* medians taken from the same numbers.
+    # ``freshness["rejected"]`` is therefore a **pool-level** count, while the
+    # ``rejected_stale`` counter below counts the rows the loop actually refused:
+    # a stale row a cheaper gate already dropped is not counted twice.
+    freshness_on = max_age_days > 0
+    ages: dict[str, float | None] = {}
+    freshness: dict[str, Any] | None = None
+    if freshness_on:
+        zone = ZoneInfo(str(config.get("timezone") or "Asia/Shanghai"))
+        ages = {
+            candidate.video_id: published_age_days(candidate, _freshness_now(config, zone), zone)
+            for candidate in pool
+        }
+        ages_before = [age for age in ages.values() if age is not None]
+        ages_after = [age for age in ages_before if age <= max_age_days]
+        freshness = freshness_block(max_age_days, ages_before, ages_after, len(pool) - len(ages_before))
+
+    # --- Cross-run de-duplication index (loaded only when switched on) -------
+    # Read once, before the loop, so a single period cannot both skip a clip and
+    # then re-record it; ``replication_dedup.remember_delivered`` writes the file
+    # back once delivery has finished.
+    dedup_on = dedup_enabled(config)
+    delivered_index = load_delivered_index(delivered_index_path(config)) if dedup_on else {}
     # --- Relevance gate (optional; absent key == byte-identical run) ----------
     # Resolved *before* the loop so the subject vocabulary (and the "is this pool
     # on-topic at all" decision) is computed once, not per candidate.  A theme
@@ -1566,6 +1700,8 @@ def select_material_replicas(
     rejected_speech = 0
     rejected_not_video = 0
     rejected_duration_post = 0
+    rejected_stale = 0
+    rejected_cross_run = 0
     validation_on = validation_enabled(config)
     validation_passed = 0
     validation_rejected = 0
@@ -1624,6 +1760,38 @@ def select_material_replicas(
                 "aweme_type": str(getattr(candidate, "aweme_type", "") or ""),
             })
             continue
+        # --- Cross-run de-duplication (optional; switch absent == no-op) ------
+        # Judged before the theme/author gates on purpose: "we already shipped
+        # this clip" is a fact about the candidate itself, and letting it be
+        # recorded as a *relevance* rejection would make the theme gate look
+        # blunter than it actually is.
+        duplicate = cross_run_duplicate_reason(config, delivered_index, candidate)
+        if duplicate:
+            rejected_cross_run += 1
+            unmet.append({
+                "video_id": candidate.video_id,
+                "stage": "cross_run_duplicate",
+                "reason": duplicate,
+            })
+            continue
+        # --- Freshness window (optional; absent/0 == no-op) -------------------
+        # An *undated* candidate is deliberately let through: a gap in
+        # ``published_at`` is a hole in the pool, not evidence of staleness.
+        if freshness_on:
+            age = ages.get(candidate.video_id)
+            if age is not None and age > max_age_days:
+                rejected_stale += 1
+                unmet.append({
+                    "video_id": candidate.video_id,
+                    "stage": "stale",
+                    "reason": (
+                        f"发布时间 {str(candidate.published_at)[:10]} 距今 {age:.1f} 天，"
+                        f"超出时效窗口 {max_age_days} 天（下载前判定，未消耗流量）"
+                    ),
+                    "published_at": candidate.published_at,
+                    "age_days": round(age, 3),
+                })
+                continue
         if gate_enabled:
             subject_hits = subject_hit_count(candidate, gate_subject_terms)
             if subject_hits < min_subject_hits:
@@ -1899,6 +2067,10 @@ def select_material_replicas(
         # Present only when the switch is on, so a config without it keeps the
         # historic ``stage`` payload byte-identical.
         stage["relevance_gate"] = "active" if gate_enabled else "inactive:no_subject_terms"
+    if freshness is not None:
+        # Same convention as ``relevance_gate``: present only when the window is
+        # set, so a config without it keeps the historic ``stage`` byte-identical.
+        stage["material_freshness"] = freshness
     if insufficient:
         warnings.append(_material_summary(len(pool), face_checked, len(selected), min_count, unmet))
         if byte_floor_missed:
@@ -1922,6 +2094,10 @@ def select_material_replicas(
         "rejected_speech": rejected_speech,
         "material_selected": len(selected),
     }
+    if dedup_on:
+        counters["rejected_cross_run"] = rejected_cross_run
+    if freshness is not None:
+        counters["rejected_stale"] = rejected_stale
     if validation_on:
         counters["stage_validation_passed"] = validation_passed
         counters["stage_validation_rejected"] = validation_rejected
@@ -1940,4 +2116,7 @@ def select_material_replicas(
         "counters": counters,
         "warnings": warnings,
         "errors": errors,
+        # Present only when the freshness window is set: a config without the key
+        # must produce a result dict that is byte-for-byte the pre-change one.
+        **({"freshness": freshness} if freshness is not None else {}),
     }

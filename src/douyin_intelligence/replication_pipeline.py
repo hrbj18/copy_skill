@@ -29,6 +29,7 @@ from .media_tools import media_tool_available, resolve_media_tool
 from .mediacrawler_patch import duration_patch_status
 from .replication_candidates import Candidate, collect_candidate_pool
 from .replication_clips import ClipInterval, build_clip_metadata, derive_face_free_intervals, export_video_clips, remove_tree
+from .replication_dedup import dedup_enabled, remember_delivered
 from .replication_delivery import (
     DELIVERY_README,
     FOLDER_MAIN,
@@ -1034,6 +1035,10 @@ def run_material_replication(
     main_materials: list[dict[str, Any]] = []
     supporting_materials: list[dict[str, Any]] = []
     material_sources: list[dict[str, Any]] = []
+    # Cross-run de-duplication bookkeeping: filled as each candidate is actually
+    # delivered (see ``remember_delivered`` after the loop), never before a file
+    # has landed.
+    delivered_records: list[dict[str, Any]] = []
     main_seq = 0
     support_seq = 0
     clips_exported = 0
@@ -1092,6 +1097,16 @@ def run_material_replication(
             "source": str(getattr(candidate, "source", "douyin") or "douyin"),
             "hit_ratio": relevance_detail.get("hit_ratio"),
             "visual_verdict": visual_verdicts.get(str(candidate.video_id)),
+        })
+        # Cross-run de-duplication provenance, taken from the row that just
+        # landed.  Only *collected* here -- the index is written after the whole
+        # loop, so a failure part-way through records nothing.
+        delivered_records.append({
+            "video_id": candidate.video_id,
+            "author": candidate.author,
+            "title": candidate.title,
+            "bytes": file_size(item["video_path"]),
+            "published_at": candidate.published_at,
         })
 
         face_per_frame = face.get("face_per_frame") or []
@@ -1156,6 +1171,12 @@ def run_material_replication(
             (main_materials if is_main else supporting_materials).append(record)
             clips_exported += 1
 
+    # Cross-run de-duplication is written back only now, once every source file
+    # has been copied: a crash part-way through the loop must not mark clips that
+    # were never written as delivered.  A no-op when ``dedup_across_runs`` is
+    # off (the default), so ``delivered_index.json`` is never created by accident.
+    remember_delivered(config, delivered_records, theme=theme, delivered_at=_now_iso(config))
+
     # Run-level log of every truncated face sample -- both the ones that reached
     # delivery (mild truncation: kept with ``low_confidence``) and the ones the
     # class gate rejected (severe truncation: downgraded to ``unavailable``).  The
@@ -1207,6 +1228,16 @@ def run_material_replication(
         "rejected_speech": int(material_result["counters"].get("rejected_speech", 0)),
         "rejected_not_video": int(material_result["counters"].get("rejected_not_video", 0)),
     }
+    # T6 gates: both are opt-in, and both are reported **only when switched on**
+    # so a config without them keeps this manifest's ``counters`` byte-identical.
+    # ``material_freshness`` (set below) carries the pool's before/after age
+    # medians, because trimming the tail does not by itself make the median clip
+    # younger -- the count alone would let a run claim freshness it lacks.
+    material_freshness = material_result.get("freshness")
+    if material_freshness is not None:
+        counters["rejected_stale"] = int(material_result["counters"].get("rejected_stale", 0))
+    if dedup_enabled(config):
+        counters["rejected_cross_run"] = int(material_result["counters"].get("rejected_cross_run", 0))
     duration_window_rejected = (
         sum(1 for item in (script_result.get("unmet") or []) if item.get("stage") == "duration_post")
         + int(material_result["counters"].get("rejected_duration_post", 0))
@@ -1254,6 +1285,10 @@ def run_material_replication(
         face_truncated_samples=face_truncated_samples or None,
     )
     manifest["material_replica"] = material_replica_block
+    if material_freshness is not None:
+        # Present only when ``material_replica.max_age_days`` is set, so a config
+        # without the key keeps the delivered manifest byte-identical.
+        manifest["material_freshness"] = material_freshness
     # ``keep_source_video`` and "only publish selected sources" are the *same*
     # switch: 04-原片 receives one copy of every *selected* material source (never
     # the non-selected downloads, which stay in the persistent media store).  This
