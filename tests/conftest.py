@@ -13,7 +13,10 @@ sees.  A test fixture built from the live config must be closed by default: a
 feature the operator switched on in ``config/content_intelligence.json`` must
 not silently change a test that never asked for it.  A test that does exercise
 such a feature opts in explicitly, by writing the config block itself after
-building its fixture.
+building its fixture.  By the same logic nothing here ever asserts on the
+*shipped* value of a switch: such an assertion passes only while the switch
+happens to be off, and turns into a lie -- or a red suite -- the moment an
+operator turns it on.
 
 A second, session-scoped safety net records the git-tracked files at the
 repository root that *exist* before the first test and re-checks them at session
@@ -45,7 +48,14 @@ _GUARDED_MODULE_PREFIXES = ("test_replication_", "test_face_metrics")
 # "helpfully" re-enable them or delete this constant: a test that exercises one
 # of these features must set the block itself after building its fixture (see
 # test_replication_selection.py / test_replication_cli.py).
-_OPT_IN_MATERIAL_SWITCHES = ("relevance_gate", "visual_verify")
+_OPT_IN_MATERIAL_SWITCHES = ("relevance_gate", "visual_verify", "dedup_across_runs")
+
+# Same contract, one level deeper: switches that live under
+# ``jobs.material_replication.material_replica.*``.  ``max_age_days`` ships at 90
+# in production, and a fixture that inherits it would make the "switched off
+# changes nothing" guard cases vacuous -- they must build their window from
+# scratch, so the seam clears it here.
+_OPT_IN_MATERIAL_REPLICA_SWITCHES = ("max_age_days",)
 
 
 def _strip_opt_in_material_switches(payload: dict) -> dict:
@@ -54,6 +64,10 @@ def _strip_opt_in_material_switches(payload: dict) -> dict:
     if isinstance(material, dict):
         for key in _OPT_IN_MATERIAL_SWITCHES:
             material.pop(key, None)
+        replica = material.get("material_replica")
+        if isinstance(replica, dict):
+            for key in _OPT_IN_MATERIAL_REPLICA_SWITCHES:
+                replica.pop(key, None)
     return payload
 
 # Repository root: the directory that contains ``tests/``.

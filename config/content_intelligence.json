@@ -583,7 +583,9 @@
         "heat_gate_percentile": 0.0,
         "_delivered_bytes_comment": "交付体积配额：min_delivered_bytes 是入选源片「文件字节和」的下限，未达时选材循环会越过 target_count 继续扫描更长/更多的候选（不再在 4 条就停）；max_delivered_bytes 是上限，加入后会超上限的候选直接跳过、不入选（0=不限）。两键缺省(=0)时行为与改动前逐字节相同。上限只约束「最终入选源片」，8s 切片段另占交付目录、不计入。",
         "min_delivered_bytes": 73400320,
-        "max_delivered_bytes": 104857600
+        "max_delivered_bytes": 104857600,
+        "_max_age_days_comment": "素材层时效闸门（2026-09-14 启用）。按候选自带的 published_at 剔除超龄素材，位置在下载之前、不花一个字节，是唯一能在不耗带宽的前提下缩小候选池的闸门。值 90 天是【已知残余缺陷】下的折中：单一全局键表达不了五档时效口径（非日常前沿硬件 3 月 / 全民消费品 1 月 / 大模型与八卦 1 周 / 行情供需 1 周 / 政策管制 1 周）。离线建模（用已交付 04-原片 的 size/duration 中位数反推经验码率 147210 B/s）实测：7 天窗口让「内存涨价 最贵装机季」变成 0 条；30 天让内存期(1条/35MiB)、显卡期(3条/38MiB)够不到 70 MiB 下限；90 天 7 期最少 9 条、估计 101 MiB。不设窗口时离群极大（Roomba 池最旧 2367 天、苹果期 2029 天、显卡期 1244 天）。要实现真正的五档须新增【按题材类的时效键】，别用词表猜类目（太脆）。缺该键或值为 0 = 不过滤（与改动前逐字节等价）；tests/conftest.py 的 opt-in seam 会把它从测试夹具里剥掉。",
+        "max_age_days": 90
       },
       "relevance_gate": {
         "_comment": "下载前相关性准入闸门（2026-09-14 新增）。enabled=true 时，标题未命中主题主体词（replication_theme.subject_terms）的候选在下载前即被剔除，stage=\"relevance\"、计入 rejected_relevance。min_subject_hits 是单条候选标题至少要命中的主体词个数（默认 1）。min_hit_ratio 是【池级】合理性下限，分母是整个候选池（不是选定集）⇒ 只能取低水位（0.05），绝不能设 0.8：0.8 会让每一期都 degraded、彻底失去区分度；真正的「命中率 ≥80%」由 min_subject_hits=1 保证（每条入选素材标题都含主体词，选定集命中率天然 100%）。min_hit_ratio 仅在主题确实解析出主体词时才生效（主体词为空时不触发，避免误报）。两键缺省时行为与改动前逐字节相同。注意：本闸门依赖调用方传入 theme，replication_pipeline 已于 2026-09-14 补上 theme=theme。",

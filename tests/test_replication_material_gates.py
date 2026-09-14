@@ -12,7 +12,7 @@ Covered here:
 * ``material_freshness`` reports the pool's before/after age medians;
 * an already-delivered id is refused as ``stage="cross_run_duplicate"``;
 * with the dedup switch off an existing index is ignored entirely;
-* the shipped config leaves both gates off.
+* every spelling of "off" is off, read from a *synthetic* config.
 """
 
 from __future__ import annotations
@@ -278,11 +278,21 @@ def test_selection_only_reads_the_index(tmp_path: Path, monkeypatch) -> None:
 # --------------------------------------------------------------------------- #
 # 4. Config reading
 # --------------------------------------------------------------------------- #
-def test_shipped_config_leaves_both_gates_off() -> None:
-    settings = load_config()["jobs"]["material_replication"]
-    assert "dedup_across_runs" not in settings
-    assert "max_age_days" not in settings["material_replica"]
-    assert material_max_age_days(settings["material_replica"]) == 0
+def test_max_age_days_reads_the_switch_from_a_synthetic_config() -> None:
+    """Every spelling of "off" is off, and a set value is read as written.
+
+    Deliberately a *synthetic* mapping instead of ``load_config()``.  Asserting
+    what production enables only passes while the switch happens to be off, so
+    the case flips red the day an operator turns the window on -- and worse, it
+    would have been a tautology all along, because the conftest seam strips
+    these keys out of every ``load_config()`` payload a test ever sees.
+    Whether production enables the window is an operational decision measured by
+    its own acceptance criteria, never a unit-test invariant.
+    """
+    for off in ({}, {"max_age_days": 0}, {"max_age_days": None}, {"max_age_days": ""}):
+        assert material_max_age_days(off) == 0
+    assert material_max_age_days({"max_age_days": 90}) == 90
+    assert material_max_age_days({"max_age_days": "90"}) == 90
 
 
 @pytest.mark.parametrize("value", [-1, "一周"])

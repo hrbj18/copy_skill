@@ -347,11 +347,21 @@ def test_test_config_strips_the_shipped_opt_in_switches() -> None:
 
     Guards the regression where a helper built its config from the live
     ``load_config()`` and silently picked up the newly enabled ``relevance_gate`` /
-    ``visual_verify``.  Only those two keys may be missing: the rest of
-    ``jobs.material_replication`` must still be the shipped block, so this also
-    catches a seam that strips too much.
+    ``visual_verify`` / ``material_replica.max_age_days``.  Only the *registered*
+    keys may be missing: the rest of the blocks must still be the shipped ones,
+    so this also catches a seam that strips too much.
+
+    Keep ``registered`` / ``nested_registered`` in sync with
+    ``tests/conftest.py::_OPT_IN_MATERIAL_SWITCHES`` and
+    ``_OPT_IN_MATERIAL_REPLICA_SWITCHES`` (``tests`` is not a package, so the
+    tuples cannot be imported).  Note this test deliberately does *not* assert
+    what production enables -- it only asserts that whatever production ships,
+    the seam removes the registered keys.
     """
     from douyin_intelligence import config as config_module
+
+    registered = ("relevance_gate", "visual_verify", "dedup_across_runs")
+    nested_registered = ("max_age_days",)
 
     shipped = json.loads(
         (config_module.project_root() / "config" / "content_intelligence.json").read_text(
@@ -359,17 +369,22 @@ def test_test_config_strips_the_shipped_opt_in_switches() -> None:
         )
     )
     shipped_mr = shipped["jobs"]["material_replication"]
-    assert shipped_mr["relevance_gate"]["enabled"] is True
-    assert shipped_mr["visual_verify"]["enabled"] is True
+    # The seam must actually have work to do, or the test is vacuous.
+    assert set(registered) & set(shipped_mr)
+    assert set(nested_registered) & set(shipped_mr["material_replica"])
 
     test_mr = load_config()["jobs"]["material_replication"]
-    assert "relevance_gate" not in test_mr
-    assert "visual_verify" not in test_mr
-    assert test_mr == {
-        key: value
-        for key, value in shipped_mr.items()
-        if key not in ("relevance_gate", "visual_verify")
-    }
+    for key in registered:
+        assert key not in test_mr
+    for key in nested_registered:
+        assert key not in test_mr["material_replica"]
+
+    expected = json.loads(json.dumps(shipped_mr))
+    for key in registered:
+        expected.pop(key, None)
+    for key in nested_registered:
+        expected["material_replica"].pop(key, None)
+    assert test_mr == expected
 
 
 def test_select_material_replicas_surfaces_per_video_face_errors(tmp_path: Path, monkeypatch) -> None:
