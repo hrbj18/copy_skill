@@ -210,7 +210,7 @@ def delivery_folder_name(business_date: str, theme: str, *, max_path_chars: int 
         parsed = date.fromisoformat(str(business_date))
     except ValueError as exc:
         raise ValueError("business_date 必须是 YYYY-MM-DD") from exc
-    max_theme = 12
+    max_theme = 24
     safe = sanitize_theme(theme, max_length=max_theme) or "未命名主题"
     prefix = f"{parsed.month}.{parsed.day:02d}"
     suffix = "复刻视频"

@@ -115,6 +115,19 @@ def test_delivery_folder_name_uses_month_without_zero_padding() -> None:
     assert delivery_folder_name("2026-01-05", "芯片") == "1.05芯片复刻视频"
 
 
+def test_delivery_folder_name_keeps_long_theme() -> None:
+    # Regression: the folder-name theme cap used to be 12 chars, which chopped
+    # real themes mid-word (e.g. "iRobot Roomba 875 扫地机器人" -> "...Roomb").
+    # The cap is now 24, so the longest of our themes (23 chars) survives whole.
+    assert (
+        delivery_folder_name("2026-09-14", "iRobot Roomba 875 扫地机器人")
+        == "9.14iRobot Roomba 875 扫地机器人复刻视频"
+    )
+    # A theme longer than the cap is still bounded by ``max_path_chars``.
+    folder = delivery_folder_name("2026-09-14", "超" * 60, max_path_chars=30)
+    assert len(folder) <= 30
+
+
 def test_delivery_folder_name_rejects_bad_date() -> None:
     with pytest.raises(ValueError):
         delivery_folder_name("2026/09/12", "苹果")
