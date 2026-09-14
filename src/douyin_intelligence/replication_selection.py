@@ -645,6 +645,14 @@ def relevance_report(
     so the caller can surface "relevance could not discriminate this pool"
     without a division by zero.
 
+    ``degraded`` additionally covers the *pool-level subject floor*: with
+    ``relevance_gate.min_hit_ratio`` set (and a non-empty subject vocabulary),
+    a pool whose ``hit_ratio`` falls below it is degraded -- "this pool does not
+    contain the theme".  That is deliberately a low sanity floor, never a
+    quality bar; per-candidate admission is the download gate's job.  Both the
+    threshold and the verdict are reported back (``min_hit_ratio``,
+    ``below_subject_floor``) so the cause of a degraded run is attributable.
+
     The *subject* dimension answers a different question than the scores do: a
     score is relative to however many terms the pool made live, while
     ``subject_hit_ids`` / ``hit_ratio`` say how much of the pool mentions the
@@ -652,12 +660,13 @@ def relevance_report(
     Microduck run needed exactly that: every keyword scored 0 (whole-phrase
     matching) yet 52% of titles contained ``microduck``, so the pool looked
     undifferentiated while it was in fact half on-topic.  ``config`` only
-    supplies the optional ``subject_aliases`` dictionary; ``None`` works and
-    uses the built-in table.
+    supplies the optional ``subject_aliases`` dictionary and the subject floor;
+    ``None`` works and uses the built-in table.
 
     Returns ``{theme, terms, live_terms, dead_terms, live_count, dead_count,
-    degraded, scores, subject_terms, subject_hit_ids, subject_hits, hit_ratio}``
-    where ``scores`` is ``video_id -> float``.
+    degraded, below_subject_floor, min_hit_ratio, scores, subject_terms,
+    subject_hit_ids, subject_hits, hit_ratio}`` where ``scores`` is
+    ``video_id -> float``.
     """
     from .replication_theme import subject_terms as _subject_terms
 
@@ -683,6 +692,23 @@ def relevance_report(
             seen_hit_ids.add(candidate.video_id)
             subject_hit_ids.append(candidate.video_id)
     subject_hits = len(subject_hit_ids)
+    hit_ratio = round(subject_hits / len(candidates), 6) if candidates else 0.0
+    # Pool-level sanity floor.  ``hit_ratio`` is a *pool* number (denominator = the
+    # whole candidate pool, ~120 rows), so it can only answer "is this theme in
+    # this pool at all" -- it must never be used as a per-run quality bar (a high
+    # one would mark every period degraded and destroy the signal).  Real
+    # "every delivered clip is on-topic" is enforced by the per-candidate download
+    # gate in ``select_material_replicas``.  Only meaningful when the theme
+    # actually yielded a subject vocabulary: a theme with no subject term cannot
+    # be gated against, so the threshold must NOT fire there (that would flip
+    # ``degraded`` for a legitimate theme -- a false positive).  Absent / zero
+    # ``min_hit_ratio`` keeps ``degraded`` byte-identical to ``live_count == 0``.
+    min_hit_ratio = 0.0
+    if config:
+        min_hit_ratio = float(
+            (material_replication_settings(config).get("relevance_gate") or {}).get("min_hit_ratio") or 0.0
+        )
+    below_subject_floor = bool(resolved_subject_terms) and min_hit_ratio > 0 and hit_ratio < min_hit_ratio
     return {
         "theme": theme,
         "terms": terms,
@@ -690,12 +716,14 @@ def relevance_report(
         "dead_terms": dead_terms,
         "live_count": live_count,
         "dead_count": len(dead_terms),
-        "degraded": live_count == 0,
+        "degraded": live_count == 0 or below_subject_floor,
+        "below_subject_floor": below_subject_floor,
+        "min_hit_ratio": min_hit_ratio,
         "scores": scores,
         "subject_terms": resolved_subject_terms,
         "subject_hit_ids": subject_hit_ids,
         "subject_hits": subject_hits,
-        "hit_ratio": round(subject_hits / len(candidates), 6) if candidates else 0.0,
+        "hit_ratio": hit_ratio,
     }
 
 
@@ -1455,10 +1483,14 @@ def select_material_replicas(
     ``min_subject_hits`` (default 1) of the theme's subject terms
     (``replication_theme.subject_terms``) is recorded as
     ``stage="relevance"`` and dropped **before any download**, so it costs
-    neither traffic nor a slot.  A theme that yields no subject term disables the
-    gate rather than rejecting the whole pool.  With the key absent -- every
-    config written before this feature -- nothing changes: the gate is off and
-    the chain is byte-for-byte the pre-gate one.
+    neither traffic nor a slot.  (``relevance_gate.min_hit_ratio`` is a different,
+    *pool-level* knob -- see :func:`relevance_report`.)  A theme that yields no
+    subject term disables the
+    gate rather than rejecting the whole pool, and that no-op is reported instead
+    of hidden: a ``warnings`` entry plus ``stage["relevance_gate"] =
+    "inactive:no_subject_terms"`` (``"active"`` when it did bite).  With the key
+    absent -- every config written before this feature -- nothing changes: the
+    gate is off and the chain is byte-for-byte the pre-gate one.
     """
     from .replication_theme import project_path
 
@@ -1501,8 +1533,9 @@ def select_material_replicas(
     # that yields no subject term cannot be gated against, so the gate stays off
     # instead of rejecting every candidate.
     gate_cfg = material_replication_settings(config).get("relevance_gate") or {}
+    gate_requested = bool(gate_cfg.get("enabled")) and bool(theme)
     gate_subject_terms: list[str] = []
-    if bool(gate_cfg.get("enabled")) and bool(theme):
+    if gate_requested:
         gate_subject_terms = list(
             relevance_report(candidates, str(theme), None, config=config)["subject_terms"]
         )
@@ -1536,6 +1569,12 @@ def select_material_replicas(
     validation_on = validation_enabled(config)
     validation_passed = 0
     validation_rejected = 0
+    if gate_requested and not gate_enabled:
+        # The operator asked for the gate and it cannot judge anything (the theme
+        # resolved to no subject term).  Doing nothing *silently* is exactly the
+        # false-negative mode this round exists to kill -- "no warning, wrong
+        # content" -- so say so in ``warnings`` and in the ``stage`` audit.
+        warnings.append(f"主题「{theme}」未解析出主体词，相关性闸门未生效")
 
     # Candidates below the heat median never enter the loop; record them so the
     # pool stage is attributable too, instead of vanishing silently.
@@ -1856,6 +1895,10 @@ def select_material_replicas(
     if validation_on:
         stage["stage_validation_passed"] = validation_passed
         stage["stage_validation_rejected"] = validation_rejected
+    if gate_requested:
+        # Present only when the switch is on, so a config without it keeps the
+        # historic ``stage`` payload byte-identical.
+        stage["relevance_gate"] = "active" if gate_enabled else "inactive:no_subject_terms"
     if insufficient:
         warnings.append(_material_summary(len(pool), face_checked, len(selected), min_count, unmet))
         if byte_floor_missed:

@@ -298,7 +298,11 @@ def test_relevance_gate_min_subject_hits_requires_more_than_one_term(tmp_path: P
 
 
 def test_relevance_gate_stays_off_when_the_theme_yields_no_subject_term(tmp_path: Path, monkeypatch) -> None:
-    """A blank theme has nothing to match, so the gate must not empty the pool."""
+    """A blank theme has nothing to match, so the gate must not empty the pool.
+
+    The no-op must also be *observable*: a gate the operator switched on and that
+    silently judged nothing is the false-negative mode this round is about.
+    """
     config = _config(tmp_path)
     config["jobs"]["material_replication"]["relevance_gate"] = {"enabled": True}
     candidates = _gate_candidates()
@@ -311,6 +315,26 @@ def test_relevance_gate_stays_off_when_the_theme_yields_no_subject_term(tmp_path
 
     assert result["counters"]["rejected_relevance"] == 0
     assert len(result["selected"]) == 2
+    assert any("未解析出主体词，相关性闸门未生效" in warning for warning in result["warnings"])
+    assert result["stage"]["relevance_gate"] == "inactive:no_subject_terms"
+
+
+def test_relevance_gate_records_that_it_bit_in_the_stage_audit(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    config["jobs"]["material_replication"]["relevance_gate"] = {"enabled": True}
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_selection.compute_visual_metrics",
+        lambda *args, **kwargs: VisualMetrics(sampled_frames=10, motion_frame_ratio=0.8, ocr_text_frame_ratio=0.1, visual_ok=True),
+    )
+
+    result = select_material_replicas(config, _gate_candidates(), deps=_gate_deps([]), theme=_THEME)
+
+    assert result["stage"]["relevance_gate"] == "active"
+    assert result["counters"]["rejected_relevance"] == 1
+    # A config without the switch keeps the historic stage payload untouched.
+    plain = _config(tmp_path)
+    without_switch = select_material_replicas(plain, _gate_candidates(), deps=_gate_deps([]), theme=_THEME)
+    assert "relevance_gate" not in without_switch["stage"]
 
 
 def test_select_material_replicas_surfaces_per_video_face_errors(tmp_path: Path, monkeypatch) -> None:

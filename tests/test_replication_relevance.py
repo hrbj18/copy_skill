@@ -216,8 +216,81 @@ def test_relevance_report_keeps_the_pre_subject_fields_unchanged() -> None:
     assert report["scores"] == {"a": 1.0} and report["degraded"] is False
     assert set(report) == {
         "theme", "terms", "live_terms", "dead_terms", "live_count", "dead_count",
-        "degraded", "scores", "subject_terms", "subject_hit_ids", "subject_hits", "hit_ratio",
+        "degraded", "below_subject_floor", "min_hit_ratio", "scores",
+        "subject_terms", "subject_hit_ids", "subject_hits", "hit_ratio",
     }
+
+
+# --------------------------------------------------------------------------- #
+# Pool-level subject floor: ``min_hit_ratio`` only answers "is this theme here"
+# --------------------------------------------------------------------------- #
+def _gate_config(min_hit_ratio: float) -> dict:
+    config = load_config()
+    config["jobs"]["material_replication"]["relevance_gate"] = {
+        "enabled": True, "min_hit_ratio": min_hit_ratio,
+    }
+    return config
+
+
+def test_relevance_report_without_the_gate_key_is_unchanged() -> None:
+    """No ``relevance_gate`` in the config ⇒ the historic ``live_count == 0`` rule.
+
+    Both a config that lacks the key and ``config=None`` must agree, and every
+    pre-existing field must keep its value (the new keys are purely additive).
+    """
+    candidates = [_candidate("a", title="苹果折叠屏开箱"), _candidate("b", title="与题材无关")]
+    bare = relevance_report(candidates, "苹果折叠屏", ["苹果折叠屏", "Apple折叠屏"])
+    none_config = relevance_report(candidates, "苹果折叠屏", ["苹果折叠屏", "Apple折叠屏"], config=None)
+    with_gate_absent = relevance_report(
+        candidates, "苹果折叠屏", ["苹果折叠屏", "Apple折叠屏"], config=load_config()
+    )
+    for report in (bare, none_config, with_gate_absent):
+        assert report["degraded"] == (report["live_count"] == 0) is False
+        assert report["below_subject_floor"] is False
+        assert report["min_hit_ratio"] == 0.0
+        assert report["live_terms"] == ["苹果折叠屏"]
+        assert report["scores"] == {"a": 1.0, "b": 0.0}
+    assert none_config == with_gate_absent
+
+
+def test_relevance_report_subject_floor_does_not_fire_without_subject_terms() -> None:
+    """A theme that yields no subject term must never be called degraded.
+
+    Otherwise the floor would flip ``degraded`` for a legitimate theme that simply
+    has an empty vocabulary -- a false positive on the very signal the run is
+    supposed to trust.
+    """
+    candidates = [_candidate("a", title="苹果折叠屏开箱")]
+    report = relevance_report(candidates, "   ", ["苹果折叠屏"], config=_gate_config(0.05))
+    assert report["subject_terms"] == []
+    assert report["hit_ratio"] == 0.0
+    assert report["below_subject_floor"] is False
+    assert report["degraded"] is False
+    assert report["min_hit_ratio"] == 0.05
+
+
+def test_relevance_report_subject_floor_fires_below_the_threshold() -> None:
+    candidates = [_candidate(f"v{i}", title="完全无关的内容") for i in range(19)]
+    candidates.append(_candidate("hit", title="microduck 机器鸭开箱"))
+    # ``机器鸭`` keeps ``live_count`` non-zero, so only the pool floor can degrade.
+    report = relevance_report(candidates, "Microduck 机械鸭机器人", ["机器鸭"], config=_gate_config(0.05))
+    # 1/20 = 0.05, so anything above the hit rate fires; use a stricter floor.
+    assert report["live_count"] == 1
+    assert report["hit_ratio"] == 0.05 and report["subject_hits"] == 1
+    # Exactly at the threshold is *not* below it.
+    assert report["below_subject_floor"] is False and report["degraded"] is False
+    strict = relevance_report(candidates, "Microduck 机械鸭机器人", ["机器鸭"], config=_gate_config(0.1))
+    assert strict["below_subject_floor"] is True
+    assert strict["degraded"] is True
+    assert strict["min_hit_ratio"] == 0.1
+
+
+def test_relevance_report_subject_floor_stays_quiet_above_the_threshold() -> None:
+    candidates = [_candidate("hit", title="microduck 机器鸭开箱"), _candidate("v2", title="无关")]
+    report = relevance_report(candidates, "Microduck 机械鸭机器人", ["机器鸭"], config=_gate_config(0.05))
+    assert report["live_count"] == 1
+    assert report["hit_ratio"] == 0.5
+    assert report["below_subject_floor"] is False and report["degraded"] is False
 
 
 # --------------------------------------------------------------------------- #
