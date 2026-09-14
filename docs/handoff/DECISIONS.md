@@ -44,6 +44,13 @@
 - The zero-hit gate criterion is a hit-ratio threshold, not "zero hits". "Any hit suppresses the warning" reported a 25%-hit run as clean, so the rule is `hits / total >= min_hit_ratio`.
 - bilibili is a first-class discovery source (stdlib wbi search, no login): wbi keys are read from `/x/web-interface/nav` even at `code=-101`, requests carry the site `Referer`, and HTTP 412 is rate control (throttle + back off), not a missing header.
 
+## Windows launcher line endings and repo-root guard
+
+- The Windows batch entrypoints (`启动工作台.bat`, `科技内容情报工作台.cmd`, `scripts/launch_workbench.cmd`) MUST be checked out with CRLF. LF-only is a data-loss hazard, not a style choice: it makes `cmd.exe` mis-parse them and turns the trailing cleanup into `del /q ""` executed in the caller's cwd (see RUNTIME_SAFETY).
+- A root `.gitattributes` enforces this with exactly two rules, `*.bat text eol=crlf` and `*.cmd text eol=crlf`. A repo-wide `* text=auto` is forbidden: the tracked baseline is LF, so it would rewrite line endings everywhere and manufacture a huge spurious diff.
+- The tracked-file guard in `tests/conftest.py` is part of the test safety net, not an optional convenience: any tracked repository-root file that disappears during a run is a loud `pytest.fail`, restored one exact path at a time (never `git checkout -- .`).
+- Test results are reported as bare `pytest tests` = 744 passed, or 733 passed with `--ignore=tests/test_workbench_launcher.py` (that file contributes 11 cases). This project has no deselect mechanism; "deselected by convention" was an inaccurate shorthand for the LF-only launcher failures, now fixed.
+
 ## Handoff maintenance
 
 - The mandatory context is a router, not a project history.

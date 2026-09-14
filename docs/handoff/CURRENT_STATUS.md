@@ -31,8 +31,9 @@ Updated: 2026-09-14.
 
 - `third_party/MediaCrawler` is a submodule at `d6f7c5bb906b6dac40ddf343ef9e26438a3de092`, tracking `https://github.com/NanmiCoder/MediaCrawler.git`.
 - Source adapters landed in `447ba87`; delivery-folder theme limit raised 12 -> 24 in `9082bd8`.
+- Repo-root data loss: the LF-only `.bat`/`.cmd` launchers deleted all 10 top-level tracked files (subdirectories intact) three times; root-caused, fixed and guarded in `0341c0e`/`aedcdad`/`47143aa` (see RUNTIME_SAFETY).
 - Handoff verification: `audit_handoff.py` 7/7 OK; `tests/test_handoff.py` 3 passed.
-- Full suite: 733 passed (736 collected); 3 pre-existing, unrelated failures remain in `tests/test_workbench_launcher.py` (environment-sensitive; deselected by project convention).
+- Full suite: 744 passed via `pytest tests`; 733 passed with `--ignore=tests/test_workbench_launcher.py` (that file adds 11 cases). No deselect mechanism exists — the former 3 launcher failures were the LF-only batch defect above, now green.
 
 ## Next direction
 

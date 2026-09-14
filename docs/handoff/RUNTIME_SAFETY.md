@@ -18,6 +18,8 @@
 - Run the full suite the same way until it completes without `KeyboardInterrupt` or host interruption.
 - Disable pytest cache and Python bytecode during safety validation when a no-write audit is required.
 - Never combine real browser collection, paid model calls, scheduler installation, or unbounded media work with the offline unit suite.
+- Never run pytest concurrently. Parallel runs inside one window made a file deletion un-attributable to a specific test (this caused one misdiagnosis); one run, one person, serial.
+- Never run `pytest .`: a positional argument overrides `testpaths` and pulls in `third_party/MediaCrawler/tests/**`, producing 18 collection errors (missing sqlalchemy/playwright). Use `pytest tests ...` or no positional argument at all.
 
 ## Pluggable material sources
 
@@ -26,6 +28,14 @@
 - Each source supplies its own media `Referer` (`download_referer`): Douyin `https://www.douyin.com/`, bilibili `https://www.bilibili.com/`, yt-dlp none.
 - bilibili needs no login: `/x/web-interface/nav` returns `data.wbi_img` even at `code=-101`, so read the keys regardless of `code`.
 - bilibili: throttle between requests (default 2.0 s, `bilibili_sleep_seconds`) and back off on HTTP 412 (up to 4 attempts, `3 * attempt` s). 412 is rate control, not a missing header; it clears after a pause.
+
+## Windows batch launchers (repo-root data loss)
+
+- An LF-only `.bat`/`.cmd` makes `cmd.exe`'s batch reader desync line by line under `chcp 65001` + CJK text: each line loses leading bytes, so `set "RUN_LOG=..."` is swallowed and `cd /d "%PROJECT_ROOT%"` never runs (cwd stays at the caller's cwd).
+- The trailing cleanup then degrades to `del /q ""`. Asymmetry that must not be forgotten: on a cmd *command line* `del /q ""` is only an rc=1 syntax error and deletes nothing; inside a *batch file* it deletes every file in the current directory. `del` never recurses, so subdirectories survive — which is why the 10 top-level repository files were wiped while every subdirectory stayed intact.
+- Fix (three commits): `.gitattributes` pins `*.bat`/`*.cmd` to `text eol=crlf`; each launcher delete is `if defined RUN_LOG if exist "%RUN_LOG%" del /q "%RUN_LOG%"` (the `if defined` guard is what also catches "defined but empty").
+- `.gitattributes` is not optional: this repo runs `core.autocrlf=false` and the HEAD blobs are LF-only, so rewriting only the working tree would be undone by the next checkout; only `eol=crlf` makes a fresh clone or re-checkout CRLF. Never add `* text=auto` — the tracked baseline is LF (`git ls-files --eol`), so auto-normalization would rewrite line endings repo-wide and bury real diffs.
+- `tests/conftest.py` carries a session-scoped autouse guard: it snapshots the git-tracked top-level files that *exist* before the first test and re-checks them at session end, calling `pytest.fail` loudly and printing a per-file `git checkout HEAD -- "<exact path>"`. It explicitly warns never to run `git checkout -- .`. git is probed via `shutil.which("git")`, then a glob of the bundled PortableGit `*/cmd/git.exe` (version never pinned); if neither exists the guard prints `[tracked-file-guard] git unavailable - guard disabled` and must never fail silently. It is a fixture, not a `pytest_sessionstart` hook, because `tests/conftest.py` registers as a plugin only during collection — after the session-start hook has already fired.
 
 ## Incident recovery
 

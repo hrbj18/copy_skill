@@ -24,10 +24,11 @@
 - `replication_theme.py`, `replication_candidates.py`, `replication_selection.py`, `replication_script.py`, `replication_clips.py`, `replication_delivery.py`, `replication_pipeline.py`, `face_metrics.py`: theme-driven Douyin material replication (candidate pool, deterministic selection, heuristic script skeleton, face-free clip export, atomic delivery).
 - `sources/__init__.py`, `sources/base.py`, `sources/douyin.py`, `sources/ytdlp.py`, `sources/bilibili.py`: pluggable source registry (`SourceAdapter`, `MediaResolver`, `DownloadTarget`) plus Douyin (crawler wrapper), yt-dlp (YouTube `ytsearch`) and bilibili (stdlib wbi search) adapters; multi-source aggregation (`source_aggregation.py`) not yet implemented.
 - `config/content_intelligence.json`: non-secret V2.4 source, story, media and model budgets. `.env.local` and Cookie files are secrets; never read them for routine diagnosis.
+- `.gitattributes`: pins `*.bat`/`*.cmd` to CRLF (Windows launcher safety); no other file is rewritten.
 
 ## Verification commands
 
-- Full tests: `.venv\Scripts\python.exe -m pytest -p no:cacheprovider`; compile: `.venv\Scripts\python.exe -m compileall -q src tests`.
+- Full tests: `.venv\Scripts\python.exe -m pytest tests -p no:cacheprovider` (run serially; never a bare `pytest .`); compile: `.venv\Scripts\python.exe -m compileall -q src tests`.
 - Offline health and CLI: `.venv\Scripts\python.exe -m douyin_intelligence.cli doctor` and `--help`.
 - V2 run: `.venv\Scripts\python.exe -m douyin_intelligence.cli daily-material-exchange run [--business-date YYYY-MM-DD]`; inspect: `daily-material-exchange inspect --business-date YYYY-MM-DD`.
 - Material replication: `.venv\Scripts\python.exe -m douyin_intelligence.cli material-replication run --theme "苹果折叠屏手机" [--dry-run]`; `inspect --folder <交付目录>`; `doctor` (offline, no download).
