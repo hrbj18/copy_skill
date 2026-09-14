@@ -130,7 +130,14 @@ class MediaTooLargeError(ValueError):
         self.bytes_read = max(0, int(bytes_read or 0))
 
 
-def download_video(url: str, destination: Path, config: dict[str, Any], *, max_bytes: int | None = None) -> None:
+def download_video(
+    url: str,
+    destination: Path,
+    config: dict[str, Any],
+    *,
+    max_bytes: int | None = None,
+    referer: str | None = None,
+) -> None:
     destination = Path(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     settings = config["materials"]
@@ -138,6 +145,12 @@ def download_video(url: str, destination: Path, config: dict[str, Any], *, max_b
     # remaining allowance); when omitted the historical ``max_video_bytes``
     # semantics are preserved for every existing caller.
     cap = int(max_bytes) if max_bytes is not None else int(settings.get("max_video_bytes") or 524288000)
+    # ``referer`` was a hard-coded Douyin value.  It is now an optional
+    # cross-platform hook: several CDNs (a Douyin ``Referer`` sent to YouTube's
+    # edge, for instance) reject a mismatched referer with a 403, so a non-Douyin
+    # source must be able to override it.  ``None`` keeps the historical header
+    # *byte-for-byte* -- no existing caller changes behaviour.
+    request_referer = "https://www.douyin.com/" if referer is None else str(referer)
     cached_bytes = destination.stat().st_size if destination.is_file() else 0
     if cached_bytes > 1024:
         # A cache hit is still *delivered bytes* for this candidate, so it must
@@ -159,7 +172,7 @@ def download_video(url: str, destination: Path, config: dict[str, Any], *, max_b
     for attempt in range(attempts):
         temporary = destination.with_suffix(destination.suffix + ".part")
         try:
-            request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": "https://www.douyin.com/"})
+            request = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Referer": request_referer})
             size = 0
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 declared_bytes: int | None = None

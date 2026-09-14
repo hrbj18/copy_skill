@@ -717,6 +717,50 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
             raise ConfigurationError("素材复刻下载校验时长容差必须落在 0~1")
         if float(validation.get("decode_time_budget_seconds") or 0) < 0:
             raise ConfigurationError("素材复刻下载校验解码时间预算必须非负")
+    # Multi-source switch (optional, purely additive).  When ``sources`` is
+    # absent -- the case for every config written before this feature -- the
+    # whole block is skipped, so the import of the source registry is deferred
+    # and load_config stays byte-for-byte equivalent to before.  Only a present
+    # key is validated, and only its shape/membership, mirroring this file's
+    # loose style elsewhere.
+    sources = material_replication.get("sources")
+    if sources is not None:
+        if not isinstance(sources, list):
+            raise ConfigurationError("jobs.material_replication.sources 必须是数组")
+        from .sources import known_sources
+
+        allowed_sources = known_sources()
+        unknown_sources = [str(item) for item in sources if str(item) not in allowed_sources]
+        if unknown_sources:
+            raise ConfigurationError(
+                f"jobs.material_replication.sources 含未知素材源：{unknown_sources}（可用：{sorted(allowed_sources)}）"
+            )
+    source_budgets = material_replication.get("source_budgets")
+    if source_budgets is not None:
+        if not isinstance(source_budgets, dict):
+            raise ConfigurationError("jobs.material_replication.source_budgets 必须是对象")
+        for source_name, value in source_budgets.items():
+            try:
+                budget_value = int(value)
+            except (TypeError, ValueError):
+                raise ConfigurationError(
+                    f"素材复刻各源预算 source_budgets.{source_name} 必须为正整数"
+                )
+            if budget_value < 1:
+                raise ConfigurationError(
+                    f"素材复刻各源预算 source_budgets.{source_name} 必须 ≥ 1"
+                )
+    source_gate = material_replication.get("source_gate")
+    if source_gate is not None:
+        if not isinstance(source_gate, dict):
+            raise ConfigurationError("jobs.material_replication.source_gate 必须是对象")
+        if not isinstance(source_gate.get("enabled", True), bool):
+            raise ConfigurationError("素材复刻源级闸门 source_gate.enabled 必须是布尔值")
+        on_zero_match = str(source_gate.get("on_zero_match") or "warn")
+        if on_zero_match not in {"warn", "skip_source", "fail_source"}:
+            raise ConfigurationError(
+                "素材复刻源级闸门 source_gate.on_zero_match 必须是 warn/skip_source/fail_source"
+            )
     workbench = payload.get("workbench")
     if not isinstance(workbench, dict):
         raise ConfigurationError("workbench 必须是对象")
