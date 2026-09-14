@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import types
 from pathlib import Path
 
@@ -339,6 +340,36 @@ def test_relevance_gate_records_that_it_bit_in_the_stage_audit(tmp_path: Path, m
     plain["jobs"]["material_replication"].pop("relevance_gate", None)
     without_switch = select_material_replicas(plain, _gate_candidates(), deps=_gate_deps([]), theme=_THEME)
     assert "relevance_gate" not in without_switch["stage"]
+
+
+def test_test_config_strips_the_shipped_opt_in_switches() -> None:
+    """The conftest seam: production turns these switches on; a test fixture must not inherit them.
+
+    Guards the regression where a helper built its config from the live
+    ``load_config()`` and silently picked up the newly enabled ``relevance_gate`` /
+    ``visual_verify``.  Only those two keys may be missing: the rest of
+    ``jobs.material_replication`` must still be the shipped block, so this also
+    catches a seam that strips too much.
+    """
+    from douyin_intelligence import config as config_module
+
+    shipped = json.loads(
+        (config_module.project_root() / "config" / "content_intelligence.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    shipped_mr = shipped["jobs"]["material_replication"]
+    assert shipped_mr["relevance_gate"]["enabled"] is True
+    assert shipped_mr["visual_verify"]["enabled"] is True
+
+    test_mr = load_config()["jobs"]["material_replication"]
+    assert "relevance_gate" not in test_mr
+    assert "visual_verify" not in test_mr
+    assert test_mr == {
+        key: value
+        for key, value in shipped_mr.items()
+        if key not in ("relevance_gate", "visual_verify")
+    }
 
 
 def test_select_material_replicas_surfaces_per_video_face_errors(tmp_path: Path, monkeypatch) -> None:

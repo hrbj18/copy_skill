@@ -7,6 +7,14 @@ a test that calls ``load_config()`` without an explicit override still stays
 isolated.  Tests that assign their own ``tmp_path`` afterwards keep working
 because their assignment simply replaces the guarded default.
 
+The same fixture also strips the production-enabled *opt-in* switches
+(``_OPT_IN_MATERIAL_SWITCHES``) out of every ``load_config()`` payload a test
+sees.  A test fixture built from the live config must be closed by default: a
+feature the operator switched on in ``config/content_intelligence.json`` must
+not silently change a test that never asked for it.  A test that does exercise
+such a feature opts in explicitly, by writing the config block itself after
+building its fixture.
+
 A second, session-scoped safety net records the git-tracked files at the
 repository root that *exist* before the first test and re-checks them at session
 end.  It exists because a malformed Windows batch launcher once ran with
@@ -28,6 +36,26 @@ import pytest
 # root.  Matching is by test-module name (tests/ is not a package).
 _GUARDED_MODULE_PREFIXES = ("test_replication_", "test_face_metrics")
 
+# Opt-in behaviour switches that ship ENABLED in config/content_intelligence.json
+# (jobs.material_replication.*).  Production wants them on, but a test that builds
+# its fixture from the live ``load_config()`` wants the *previous* behaviour
+# unless it explicitly opts in.  They are therefore stripped from every
+# ``load_config()`` call made inside a test, mirroring the long-standing
+# per-helper convention of ``mr.pop("download_budget", None)``.  Do NOT
+# "helpfully" re-enable them or delete this constant: a test that exercises one
+# of these features must set the block itself after building its fixture (see
+# test_replication_selection.py / test_replication_cli.py).
+_OPT_IN_MATERIAL_SWITCHES = ("relevance_gate", "visual_verify")
+
+
+def _strip_opt_in_material_switches(payload: dict) -> dict:
+    jobs = payload.get("jobs")
+    material = jobs.get("material_replication") if isinstance(jobs, dict) else None
+    if isinstance(material, dict):
+        for key in _OPT_IN_MATERIAL_SWITCHES:
+            material.pop(key, None)
+    return payload
+
 # Repository root: the directory that contains ``tests/``.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -41,22 +69,29 @@ _PORTABLE_GIT_BASE = Path(
 
 @pytest.fixture(autouse=True)
 def _isolate_replication_project_root(request, tmp_path_factory, monkeypatch):
+    # Two jobs, deliberately kept in ONE fixture so there is only ever one wrapper
+    # around ``load_config`` in a given test:
+    #   * every test: drop the opt-in switches (see _OPT_IN_MATERIAL_SWITCHES)
+    #   * replication / face tests: additionally redirect the implicit project root
     module_name = getattr(request.module, "__name__", "") or ""
-    if not module_name.startswith(_GUARDED_MODULE_PREFIXES):
-        yield
-        return
+    isolated_root = (
+        tmp_path_factory.mktemp("replication-project-root")
+        if module_name.startswith(_GUARDED_MODULE_PREFIXES)
+        else None
+    )
 
     from douyin_intelligence import config as config_module
 
-    isolated_root = tmp_path_factory.mktemp("replication-project-root")
     original_load_config = config_module.load_config
 
     def _load_config(*args, **kwargs):
         payload = original_load_config(*args, **kwargs)
         if isinstance(payload, dict):
-            # Redirect any implicit root into the throwaway directory.  Tests
-            # that want a specific root overwrite this afterwards.
-            payload["_project_root"] = str(isolated_root)
+            if isolated_root is not None:
+                # Redirect any implicit root into the throwaway directory.  Tests
+                # that want a specific root overwrite this afterwards.
+                payload["_project_root"] = str(isolated_root)
+            _strip_opt_in_material_switches(payload)
         return payload
 
     monkeypatch.setattr(config_module, "load_config", _load_config)
