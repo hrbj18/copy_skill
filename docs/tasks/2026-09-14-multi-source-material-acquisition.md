@@ -213,7 +213,7 @@ prefilter → relevance → DownloadBudget → 下载（media_resolver.resolve_t
 ### 5.7 测试
 
 `tests/test_sources_base.py`、`tests/test_douyin_source.py`、`tests/test_ytdlp_source.py`、`tests/test_bilibili_source.py`、`tests/test_materials_referer.py`。
-基线：**733 passed**（736 采集）；另有 **3 个预存在、与本改动无关的失败**在 `tests/test_workbench_launcher.py`（环境敏感，项目约定 deselect）。
+基线：**744 passed**（裸跑 `pytest tests`）；或 **733 passed**（`--ignore=tests/test_workbench_launcher.py`，该文件 11 例）。**本项目无 deselect 机制**。
 
 ---
 
@@ -234,7 +234,7 @@ prefilter → relevance → DownloadBudget → 下载（media_resolver.resolve_t
 ## 7. 验收
 
 - `python scripts/audit_handoff.py --root .` **7/7 OK**；`tests/test_handoff.py` **3 passed**。
-- 全量 `pytest tests`：**733 passed** + **3 个预存在失败**（`tests/test_workbench_launcher.py`，与本次无关、环境敏感，按项目约定 deselect）。
+- 全量 `pytest tests`：**744 passed，0 failed**。此前记录的"3 个预存在失败 + 按项目约定 deselect"不成立——那 3 个是 LF-only 批处理启动器缺陷打坏的 workbench 用例，已在 `0341c0e`/`aedcdad`/`47143aa` 修复并转绿。
 - 各源 `search` 在注入 seam（`ydl_factory`/`fetcher`/`collector`）下离线正确映射；其 `report` 经白名单扫描无签名 URL。
 - **向后兼容**：不配 `sources` 键时旧抖音路径逐字节等价（批次二落地时由回归守卫验证）。
 - **命中率**：某源命中率低于阈值 ⇒ 按源闸门处理；多源下不因单源低命中而整体失败。
