@@ -351,3 +351,137 @@ def test_subject_terms_split_is_add_only_and_invents_no_vocabulary() -> None:
             assert term in sanitized or term in _ALIAS_VOCAB, (theme, term)
         for added in terms[len(pre_split):]:
             assert added.casefold() in sanitized.casefold(), (theme, added)
+
+
+# --------------------------------------------------------------------------- #
+# ``theme_keywords`` / ``theme_subject_terms`` -- the trend-topic override.
+#
+# A trend / 行情 / 事件 topic is an editorial headline with no product model to
+# name, so the wording-derived lanes emit queries no creator would ever type
+# (9.14「内存涨价 最贵装机季」: 13 of its 26 pool candidates were refused by the
+# relevance gate for exactly that reason).  Two *separate* opt-in tables let an
+# operator supply the platform's own vocabulary -- one for the search words, one
+# for the gate vocabulary -- because widening one must never silently widen the
+# other.
+# --------------------------------------------------------------------------- #
+
+_TREND_THEME = "内存涨价 最贵装机季"
+_TREND_KEYWORDS = ["内存 涨价", "DDR5 涨价", "内存条 价格"]
+_TREND_SUBJECT = ["内存", "DDR5", "涨价"]
+
+
+def _material_config(**material_keys: object) -> dict:
+    """A synthetic config for the two override tables.
+
+    Synthetic on purpose: an assertion pinned to whatever the *shipped* table
+    happens to say today would only be testing the data file, and would rot the
+    moment an operator edits it.
+    """
+    return {
+        "jobs": {
+            "material_replication": {"min_keywords": 3, "max_keywords": 10, **material_keys}
+        }
+    }
+
+
+def test_theme_keywords_replace_the_derived_lanes() -> None:
+    config = _material_config(theme_keywords={_TREND_THEME: list(_TREND_KEYWORDS)})
+    keywords = expand_keywords(_TREND_THEME, config)
+
+    assert keywords[0] == _TREND_THEME  # the theme itself still leads the list
+    assert set(_TREND_KEYWORDS) <= set(keywords)
+    # The whole point: no wording-derived lane survives.
+    assert not any(_is_intent(keyword) for keyword in keywords), keywords
+
+
+def test_theme_keywords_absent_is_byte_identical() -> None:
+    baseline = expand_keywords(_TREND_THEME, _material_config())
+    assert any(_is_intent(keyword) for keyword in baseline), baseline  # lanes did run
+
+    for absent in (
+        {},
+        {"theme_keywords": None},
+        {"theme_keywords": []},
+        {"theme_keywords": {_TREND_THEME: "not-a-list"}},
+        {"theme_keywords": {_TREND_THEME: []}},
+        {"theme_keywords": {"其他主题": list(_TREND_KEYWORDS)}},
+    ):
+        assert expand_keywords(_TREND_THEME, _material_config(**absent)) == baseline, absent
+
+
+def test_theme_keywords_accepts_the_sanitized_base_as_key() -> None:
+    raw = "内存涨价 最贵装机季*"
+    base = sanitize_theme(raw, max_length=48)
+    assert base != raw
+
+    config = _material_config(theme_keywords={base: list(_TREND_KEYWORDS)})
+    keywords = expand_keywords(raw, config)
+
+    assert keywords[0] == base
+    assert set(_TREND_KEYWORDS) <= set(keywords)
+    assert not any(_is_intent(keyword) for keyword in keywords), keywords
+
+
+def test_theme_subject_terms_are_added_not_substituted() -> None:
+    before = subject_terms(_TREND_THEME, _material_config())
+    after = subject_terms(
+        _TREND_THEME, _material_config(theme_subject_terms={_TREND_THEME: list(_TREND_SUBJECT)})
+    )
+
+    assert after != before  # genuinely widens recall
+    assert after[: len(before)] == before  # add-only never reorders
+    assert set(before) <= set(after)
+    assert set(_TREND_SUBJECT) <= set(after)
+    assert len(after) == len({term.casefold() for term in after})
+
+
+def test_theme_subject_terms_absent_is_byte_identical() -> None:
+    baseline = subject_terms(_TREND_THEME, _material_config())
+
+    for absent in (
+        {},
+        {"theme_subject_terms": None},
+        {"theme_subject_terms": {}},
+        {"theme_subject_terms": {_TREND_THEME: "内存"}},
+        {"theme_subject_terms": {_TREND_THEME: []}},
+        {"theme_subject_terms": {"其他主题": list(_TREND_SUBJECT)}},
+    ):
+        assert subject_terms(_TREND_THEME, _material_config(**absent)) == baseline, absent
+
+
+def test_the_two_override_tables_are_independent() -> None:
+    """Widening the search words must not widen the gate, and vice versa.
+
+    This is the whole reason the tables are separate keys.  A bare category word
+    in the subject vocabulary is what let a competitor's video through on the
+    9.14 Roomba run; it must take a deliberate, named edit to do that.
+    """
+    plain = _material_config()
+
+    keywords_only = _material_config(theme_keywords={_TREND_THEME: list(_TREND_KEYWORDS)})
+    assert subject_terms(_TREND_THEME, keywords_only) == subject_terms(_TREND_THEME, plain)
+
+    subject_only = _material_config(theme_subject_terms={_TREND_THEME: list(_TREND_SUBJECT)})
+    assert expand_keywords(_TREND_THEME, subject_only) == expand_keywords(_TREND_THEME, plain)
+
+
+def test_shipped_override_tables_are_effective() -> None:
+    """Whatever the delivered tables name, each entry must actually take effect.
+
+    Self-consistency rather than a hard-coded expectation, on purpose: this is
+    the shape of guard that would have caught the 9.14 ``theme=theme`` defect,
+    where the feature was committed and unit-tested while the pipeline never
+    passed the argument that switched it on.
+    """
+    config = load_config()
+    material = config["jobs"]["material_replication"]
+
+    for theme, terms in (material.get("theme_keywords") or {}).items():
+        assert terms, theme
+        keywords = expand_keywords(theme, config)
+        assert set(terms) <= set(keywords), theme
+        assert not any(_is_intent(keyword) for keyword in keywords), (theme, keywords)
+
+    for theme, terms in (material.get("theme_subject_terms") or {}).items():
+        assert terms, theme
+        assert set(terms) <= set(subject_terms(theme, config)), theme

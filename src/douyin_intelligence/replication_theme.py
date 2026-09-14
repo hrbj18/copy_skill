@@ -350,6 +350,62 @@ def _brand_category_terms(folded: str) -> list[str]:
     return terms
 
 
+def _explicit_theme_keywords(settings: dict[str, Any], theme: str, base: str) -> list[str]:
+    """``jobs.material_replication.theme_keywords[<主题>]``, or ``[]``.
+
+    A *trend / 行情 / 八卦* topic has no product identity to name: the theme is an
+    editorial headline ("内存涨价 最贵装机季", "影石净利暴跌94%"), and every lane
+    below is built by gluing suffixes onto that headline, so the resulting queries
+    are ones no creator would ever type.  The 9.14 内存涨价 run showed the cost:
+    13 of 26 pool candidates were refused by the relevance gate because their
+    titles never contained the editorial phrase.
+
+    An explicit list lets an operator supply the broad terms the platform actually
+    uses ("影石", "Insta360", "全景相机").  Both the raw ``theme`` and its
+    stripped ``base`` are accepted as keys, so the entry can be written whichever
+    way the delivery folder will spell it.  Absent / blank / malformed -> ``[]``,
+    and the caller then keeps the historical wording-derived keywords unchanged.
+    """
+    table = settings.get("theme_keywords")
+    if not isinstance(table, dict):
+        return []
+    for key in (str(theme or "").strip(), str(base or "").strip()):
+        if not key:
+            continue
+        value = table.get(key)
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def _explicit_theme_subject_terms(settings: dict[str, Any], theme: str, base: str) -> list[str]:
+    """``jobs.material_replication.theme_subject_terms[<主题>]``, or ``[]``.
+
+    The sibling of :func:`_explicit_theme_keywords`, and deliberately a *second*
+    config key rather than a reuse of the first: widening the search words and
+    widening the relevance gate are two independent decisions.  The 9.14 pools
+    showed why -- a bare *category* word in the vocabulary ("扫地机") let a
+    competitor's video through, because ``min_subject_hits=1`` only asks that
+    *some* subject term hit.  Adding such a word is therefore an explicit
+    loosening the operator must ask for by name; reusing the keyword table would
+    let a search-side edit silently change what the gate accepts.
+
+    Terms are **added** to the head-derived vocabulary, never substituted, so
+    recall is monotonically non-decreasing.  Both the raw ``theme`` and its
+    stripped ``base`` are accepted as keys.  Absent / blank / malformed -> ``[]``.
+    """
+    table = settings.get("theme_subject_terms")
+    if not isinstance(table, dict):
+        return []
+    for key in (str(theme or "").strip(), str(base or "").strip()):
+        if not key:
+            continue
+        value = table.get(key)
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
 def expand_keywords(theme: str, config: dict[str, Any]) -> list[str]:
     """Expand ``theme`` into ``min_keywords``~``max_keywords`` in-domain keywords.
 
@@ -392,6 +448,16 @@ def expand_keywords(theme: str, config: dict[str, Any]) -> list[str]:
     # survive the crawler's ``budget // 10`` truncation intact.
     add(head)
     folded = base.casefold()
+    # A trend / 行情 / 八卦 topic has no product identity to name, so every lane
+    # below would glue suffixes onto an editorial headline.  When the operator has
+    # supplied the broad platform terms for this theme, they replace the lanes
+    # outright rather than merely appending -- the whole point is that the derived
+    # queries are the ones nobody types.  Absent table -> historical wording.
+    explicit = _explicit_theme_keywords(settings, theme, base)
+    if explicit:
+        for item in explicit:
+            add(item)
+        return ordered[:max_keywords]
     lanes: dict[str, list[str]] = {
         "alias": _alias_terms(base, folded) + _subject_alias_terms(head, folded, aliases),
         "category_attribute": _category_attribute_terms(head, folded, base, aliases),
@@ -472,9 +538,11 @@ def subject_terms(theme: str, config: dict[str, Any]) -> list[str]:
     Every whitespace token of the subject head (``_subject_head``) plus every
     alias of a product noun found in the theme, case-folded and de-duplicated in
     first-seen order, **plus** the script-boundary runs of those tokens
-    (:func:`_subject_split_terms`).  This is the vocabulary the relevance gate
-    matches candidate titles against, so the signature is deliberately stable:
-    ``subject_terms(theme, config) -> list[str]``.
+    (:func:`_subject_split_terms`), **plus** any operator-supplied terms from
+    ``jobs.material_replication.theme_subject_terms`` for this theme
+    (:func:`_explicit_theme_subject_terms`).  This is the vocabulary the
+    relevance gate matches candidate titles against, so the signature is
+    deliberately stable: ``subject_terms(theme, config) -> list[str]``.
 
     The category words stripped from the head never appear here: matching them
     is what let unrelated, hotter videos into the pool in the first place.  The
@@ -509,6 +577,11 @@ def subject_terms(theme: str, config: dict[str, Any]) -> list[str]:
         if subject.casefold() in folded:
             for alias in subject_aliases:
                 add(alias)
+    # Operator-supplied vocabulary for a trend / event theme whose own wording
+    # cannot name anything a creator would type.  Added before the split pass so
+    # a multi-token entry is split under the same rules as everything else.
+    for term in _explicit_theme_subject_terms(settings, theme, base):
+        add(term)
     # Add-only second pass over everything added above: a whitespace-free theme
     # contributes one whole-phrase token, which no title can ever hit, so the
     # gate would admit nothing at all.  Splitting it on script boundaries fills
