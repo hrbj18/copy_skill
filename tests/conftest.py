@@ -8,16 +8,17 @@ isolated.  Tests that assign their own ``tmp_path`` afterwards keep working
 because their assignment simply replaces the guarded default.
 
 A second, session-scoped safety net records the git-tracked files at the
-repository root before the first test and re-checks them at session end.  It
-exists because a malformed Windows batch launcher once ran with ``cwd=ROOT``
-during a bare ``pytest tests`` and deleted every top-level file.  The net turns
-that class of silent data loss into a loud, actionable failure.
+repository root that *exist* before the first test and re-checks them at session
+end.  It exists because a malformed Windows batch launcher once ran with
+``cwd=ROOT`` during a bare ``pytest tests`` and deleted every top-level file.
+The net turns that class of silent data loss into a loud, actionable failure.
 """
 
 from __future__ import annotations
 
 import shutil
 import subprocess
+import warnings
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,13 @@ _GUARDED_MODULE_PREFIXES = ("test_replication_", "test_face_metrics")
 
 # Repository root: the directory that contains ``tests/``.
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+
+# Bundled PortableGit shipped with the WorkBuddy runner.  git is NOT on the
+# system PATH on this machine, so a plain ``shutil.which`` misses it.  We glob
+# the *version* directory (never pinning a version number) as a second probe.
+_PORTABLE_GIT_BASE = Path(
+    r"C:\Users\Administrator\.workbuddy\binaries\PortableGit\versions"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -58,15 +66,37 @@ def _isolate_replication_project_root(request, tmp_path_factory, monkeypatch):
     yield
 
 
+def _find_git() -> str | None:
+    """Locate a usable git executable, or ``None`` when none can be found.
+
+    Probe order:
+    1. ``shutil.which("git")`` -- honours the caller's PATH.
+    2. The bundled PortableGit under :data:`_PORTABLE_GIT_BASE`: glob
+       ``*/cmd/git.exe`` so the version directory is never hard-coded.  A
+       missing base directory is treated as "not found" rather than an error.
+    """
+    found = shutil.which("git")
+    if found:
+        return found
+    try:
+        candidates = sorted(_PORTABLE_GIT_BASE.glob("*/cmd/git.exe"))
+    except OSError:
+        candidates = []
+    for candidate in candidates:
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def _tracked_top_level_files(root: Path) -> set[str] | None:
     """Return the set of git-tracked files directly under ``root``.
 
     Only top-level entries (no path separator) are considered: those are exactly
     the files the historical bug wiped.  Returns ``None`` when git, or a git
-    repository, is unavailable so the safety net degrades to a no-op instead of
-    blocking the suite on machines without git.
+    repository, is unavailable so the caller can warn instead of failing
+    silently.
     """
-    git = shutil.which("git")
+    git = _find_git()
     if git is None:
         return None
     try:
@@ -89,24 +119,39 @@ def _tracked_top_level_files(root: Path) -> set[str] | None:
     return tracked
 
 
+def _warn_guard_disabled(config) -> None:
+    """Emit a visible one-line warning; the guard must never fail silently."""
+    message = "[tracked-file-guard] git unavailable - guard disabled"
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    if reporter is not None:
+        reporter.write_line(message, yellow=True)
+    else:
+        warnings.warn(message, stacklevel=1)
+
+
 @pytest.fixture(scope="session", autouse=True)
-def _guard_tracked_root_files() -> None:
+def _guard_tracked_root_files(pytestconfig) -> None:
     """Fail loudly if a tracked repository-root file vanishes during the run.
 
     A session-scoped autouse fixture is used (rather than a
     ``pytest_sessionstart`` hook) because a ``tests/conftest.py`` plugin is only
     registered during collection -- after the session-start hook has already
-    fired.  The snapshot is therefore taken just before the first test runs,
-    which is early enough to catch the launcher regression.
+    fired.  The snapshot is therefore taken just before the first test runs.
+
+    Only files that actually exist at snapshot time are watched, so a file that
+    was already missing before the run can never be blamed on this run.
     """
-    before = _tracked_top_level_files(_REPO_ROOT)
-    yield
-    if before is None:
+    tracked = _tracked_top_level_files(_REPO_ROOT)
+    if tracked is None:
+        _warn_guard_disabled(pytestconfig)
+        yield
         return
 
-    vanished = sorted(
-        name for name in before if not (_REPO_ROOT / name).exists()
-    )
+    # "was present before" -- a file already gone must not be reported later.
+    before = {name for name in tracked if (_REPO_ROOT / name).exists()}
+    yield
+
+    vanished = sorted(name for name in before if not (_REPO_ROOT / name).exists())
     if not vanished:
         return
 
