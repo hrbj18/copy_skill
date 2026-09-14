@@ -20,9 +20,12 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import Any, Callable
 
+import pytest
+
 from douyin_intelligence import sources
 from douyin_intelligence.config import load_config
 from douyin_intelligence.replication_candidates import Candidate
+from douyin_intelligence.sources.base import MediaResolutionError
 from douyin_intelligence.sources.bilibili import (
     BilibiliSource,
     compute_w_rid,
@@ -212,7 +215,7 @@ def test_search_maps_candidates_and_strips_highlight() -> None:
     result = source.search(keywords, 40, config=load_config(), run_id="run-1")
 
     assert result.source == "bilibili"  # the source of truth for provenance
-    assert result.status == "ok"
+    assert result.status == "success"
     assert result.keywords_requested == keywords
     assert result.keywords_used == keywords
     # 2 + 1 + 1 items, and ``budget // 10 == 4`` is enough to keep all of them.
@@ -245,7 +248,7 @@ def test_nav_minus_101_still_yields_wbi_keys() -> None:
 
     result = source.search(["Microduck"], 40, config=load_config())
 
-    assert result.status == "ok"
+    assert result.status == "success"
     assert [c.video_id for c in result.candidates] == ["BV1uUbG6FEfb"]
 
 
@@ -265,7 +268,7 @@ def test_retry_on_412_then_success() -> None:
 
     result = source.search(["Microduck"], 40, config=load_config())
 
-    assert result.status == "ok"
+    assert result.status == "success"
     assert [c.video_id for c in result.candidates] == ["BV1uUbG6FEfb"]
     assert len(fetcher.calls_for(SEARCH_FRAG)) == 2  # retried once
     assert any(seconds == 6.0 for seconds in sleeper.calls)  # 3 * attempt(2)
@@ -371,6 +374,58 @@ def test_resolve_media_url_miss_returns_empty() -> None:
     source2, fetcher2, _sleeper2 = _make_source([(HOME_FRAG, (200, {"code": 0}))])
     assert source2.resolve_media_url(Candidate(video_id="")) == ""
     assert fetcher2.calls == []
+
+
+def test_resolve_code_zero_but_empty_stream_is_a_miss() -> None:
+    # code=0 but no durl/dash -> "no usable media" -> "" (NOT an error).
+    source, _fetcher, _sleeper = _make_source(
+        [
+            (HOME_FRAG, (200, {"code": 0})),
+            (NAV_FRAG, (200, _nav_payload(0))),
+            (VIEW_FRAG, (200, {"code": 0, "data": {"cid": 41685224881}})),
+            (PLAYURL_FRAG, (200, {"code": 0, "data": {"durl": []}})),
+        ]
+    )
+    assert source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb")) == ""
+
+
+def test_resolve_raises_on_view_transport_failure() -> None:
+    # 412 retries exhausted on /view -> a *source* error, not an empty miss.
+    source, _fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (VIEW_FRAG, (412, None))]
+    )
+    with pytest.raises(MediaResolutionError):
+        source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb"))
+
+
+def test_resolve_raises_on_view_api_error_code() -> None:
+    source, _fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (VIEW_FRAG, (200, {"code": -404, "message": "啥都木有"}))]
+    )
+    with pytest.raises(MediaResolutionError):
+        source.resolve_media_url(Candidate(video_id="BVgone"))
+
+
+def test_resolve_raises_on_playurl_transport_failure() -> None:
+    source, _fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (VIEW_FRAG, (200, {"code": 0, "data": {"cid": 41685224881}})),
+         (PLAYURL_FRAG, (412, None))]
+    )
+    with pytest.raises(MediaResolutionError):
+        source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb"))
+
+
+def test_resolve_raises_on_playurl_api_error_code() -> None:
+    source, _fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (VIEW_FRAG, (200, {"code": 0, "data": {"cid": 41685224881}})),
+         (PLAYURL_FRAG, (200, {"code": 87007, "message": "付费视频"}))]
+    )
+    with pytest.raises(MediaResolutionError):
+        source.resolve_media_url(Candidate(video_id="BV1uUbG6FEfb"))
 
 
 # --------------------------------------------------------------------------- #

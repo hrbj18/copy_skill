@@ -48,7 +48,7 @@ import urllib.request
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Callable, Sequence
 
-from .base import SourceResult
+from .base import MediaResolutionError, SourceResult
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
     from ..replication_candidates import Candidate
@@ -351,7 +351,7 @@ class BilibiliSource:
                 )
 
         if candidates:
-            status_name = "ok"
+            status_name = "success"
         elif succeeded_any:
             status_name = "no_match"
         else:
@@ -386,14 +386,18 @@ class BilibiliSource:
         )
 
     def resolve_media_url(self, candidate: "Candidate") -> str:
-        """Resolve a *single* candidate's stream URL (``""`` on any miss).
+        """Resolve a *single* candidate's stream URL.
 
         Two GETs: ``/x/web-interface/view`` for the ``cid``, then the signed
-        ``/x/player/wbi/playurl`` for the stream.  Any failure returns ``""``
-        rather than raising -- this adapter treats "cannot resolve" as a plain
-        miss, deliberately diverging from the base contract's
-        :class:`MediaResolutionError` preference (the spec calls for a silent
-        miss here).
+        ``/x/player/wbi/playurl`` for the stream.  The two failure modes are
+        kept apart (matching :mod:`..sources.base`'s intent):
+
+        * **no usable media** (``code=0`` but no ``cid`` / no ``durl`` /
+          ``dash``) -> return ``""``: a normal "move to the next candidate";
+        * **source backend / transport failure** (412 retries exhausted, a
+          network error, or a non-zero API ``code``) -> raise
+          :class:`~douyin_intelligence.sources.base.MediaResolutionError`, so
+          the download layer can back off / alert instead of silently skipping.
 
         The returned URL carries bilibili's expiring signature (the query string
         includes ``e`` / ``deadline`` / ``gen``), so it is valid for a short
@@ -407,13 +411,17 @@ class BilibiliSource:
             headers = self._headers()
             mixin_key = self._ensure_mixin_key(headers)
             if not mixin_key:
-                return ""
+                raise MediaResolutionError("bilibili：未能取得 wbi 签名钥匙（/nav 连续失败）")
             cid = self._fetch_cid(bvid, headers)
             if not cid:
-                return ""
+                return ""  # code=0 but no cid -> no usable media (normal miss)
             return self._fetch_play_url(bvid, cid, headers, mixin_key)
-        except Exception:  # noqa: BLE001 - a single miss must never raise outward
-            return ""
+        except MediaResolutionError:
+            raise
+        except Exception as exc:  # transport / parse -> a retryable source error
+            raise MediaResolutionError(
+                f"bilibili：取流异常 {type(exc).__name__}: {str(exc)[:200]}"
+            ) from exc
 
     # ------------------------------------------------------------------ #
     # Internals -- HTTP
@@ -494,10 +502,19 @@ class BilibiliSource:
         return img_key, sub_key
 
     def _fetch_cid(self, bvid: str, headers: dict[str, str]) -> int:
+        """Return the ``cid`` for ``bvid`` (``0`` when the API has no data).
+
+        Raises :class:`MediaResolutionError` on a transport failure or a
+        non-zero API ``code`` -- that is a *source* problem, not "no media".
+        """
         url = f"{VIEW_ENDPOINT}?{urllib.parse.urlencode({'bvid': bvid})}"
         status, payload = self._http(url, headers)
         if status != 200 or not isinstance(payload, dict):
-            return 0
+            raise MediaResolutionError(f"bilibili：view 接口调用失败（HTTP {status}）")
+        if payload.get("code") != 0:
+            raise MediaResolutionError(
+                f"bilibili：view 接口返回错误码 {payload.get('code')}（{payload.get('message') or ''}）"
+            )
         data = payload.get("data")
         cid = data.get("cid") if isinstance(data, dict) else None
         try:
@@ -506,12 +523,21 @@ class BilibiliSource:
             return 0
 
     def _fetch_play_url(self, bvid: str, cid: int, headers: dict[str, str], mixin_key: str) -> str:
+        """Return the stream URL (``""`` when ``code=0`` but there is no stream).
+
+        Raises :class:`MediaResolutionError` on a transport failure or a
+        non-zero API ``code``.
+        """
         params = {"bvid": bvid, "cid": cid, "qn": 32, "fnval": 1, "fourk": 0}
         signed = sign_params(params, mixin_key)
         url = f"{PLAYURL_ENDPOINT}?{urllib.parse.urlencode(signed)}"
         status, payload = self._http(url, headers)
-        if status != 200 or not isinstance(payload, dict) or payload.get("code") != 0:
-            return ""
+        if status != 200 or not isinstance(payload, dict):
+            raise MediaResolutionError(f"bilibili：playurl 接口调用失败（HTTP {status}）")
+        if payload.get("code") != 0:
+            raise MediaResolutionError(
+                f"bilibili：playurl 接口返回错误码 {payload.get('code')}（{payload.get('message') or ''}）"
+            )
         data = payload.get("data")
         if not isinstance(data, dict):
             return ""
