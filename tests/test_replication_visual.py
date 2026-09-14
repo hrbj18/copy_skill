@@ -27,6 +27,12 @@ class _Deps:
     ocr: Any = None
 
 
+#: The gate defaults to OFF (a missing config key must not change any existing
+#: run), so every test that exercises the decision logic enables it explicitly.
+_ENABLED = {"jobs": {"material_replication": {"visual_verify": {"enabled": True}}}}
+_DISABLED = {"jobs": {"material_replication": {"visual_verify": {"enabled": False}}}}
+
+
 def _write_video(root: Path, name: str) -> Path:
     path = root / name
     path.write_bytes(b"not-a-real-video")
@@ -64,7 +70,7 @@ def test_all_subjects_hit_is_conclusive(tmp_path: Path) -> None:
         return "机械鸭机器人 演示" if frame.parent.name == "video-000" else ""
 
     result = verify_videos(
-        [on_screen, in_title], ["机械鸭机器人"], {},
+        [on_screen, in_title], ["机械鸭机器人"], _ENABLED,
         deps=_Deps(_fake_extractor(), ocr),
     )
 
@@ -85,7 +91,7 @@ def test_no_subject_match_is_not_conclusive(tmp_path: Path) -> None:
     video = _write_video(tmp_path, "某账号_人形机器人测评_6666666666666666666.mp4")
 
     result = verify_videos(
-        [video], ["机械鸭", "机械鸭机器人"], {},
+        [video], ["机械鸭", "机械鸭机器人"], _ENABLED,
         deps=_Deps(_fake_extractor(), _fake_ocr("Unitree H1 人形机器人 演示")),
     )
 
@@ -101,7 +107,7 @@ def test_only_unknown_is_not_conclusive(tmp_path: Path) -> None:
     missing = tmp_path / "作者_机械鸭机器人_7777777777777777777.mp4"
 
     result = verify_videos(
-        [missing], ["机械鸭机器人"], {},
+        [missing], ["机械鸭机器人"], _ENABLED,
         deps=_Deps(_fake_extractor(), _fake_ocr("机械鸭机器人")),
     )
 
@@ -109,10 +115,8 @@ def test_only_unknown_is_not_conclusive(tmp_path: Path) -> None:
     assert [item["verdict"] for item in result["items"]] == ["unknown"]
     assert result["items"][0]["frames"] == 0
 
-    empty = verify_videos([], ["机械鸭机器人"], {}, deps=_Deps(_fake_extractor(), _fake_ocr("x")))
+    empty = verify_videos([], ["机械鸭机器人"], _ENABLED, deps=_Deps(_fake_extractor(), _fake_ocr("x")))
     assert empty == {"enabled": True, "conclusive": False, "items": []}
-    # A missing/short config must not blow up the tool resolution either.
-    assert verify_videos([], [], None) == {"enabled": True, "conclusive": False, "items": []}
 
 
 # --------------------------------------------------------------------------- #
@@ -139,7 +143,7 @@ def test_failures_degrade_only_that_item(tmp_path: Path) -> None:
         return "机械鸭机器人 演示"
 
     result = verify_videos(
-        [good, extract_fails, ocr_fails, missing], ["机械鸭机器人"], {},
+        [good, extract_fails, ocr_fails, missing], ["机械鸭机器人"], _ENABLED,
         deps=_Deps(extractor, ocr),
     )
 
@@ -155,7 +159,7 @@ def test_no_frame_extracted_is_unknown_not_miss(tmp_path: Path) -> None:
     video = _write_video(tmp_path, "作者_机械鸭机器人_8888888888888888888.mp4")
 
     result = verify_videos(
-        [video], ["机械鸭机器人"], {},
+        [video], ["机械鸭机器人"], _ENABLED,
         deps=_Deps(_fake_extractor(frames=0), _fake_ocr("机械鸭机器人")),
     )
 
@@ -178,7 +182,7 @@ def test_temp_frame_directories_are_cleaned_up(tmp_path: Path) -> None:
     def ocr(frame: Path) -> str:
         raise RuntimeError("boom")
 
-    result = verify_videos([video], ["机械鸭机器人"], {}, deps=_Deps(extractor, ocr))
+    result = verify_videos([video], ["机械鸭机器人"], _ENABLED, deps=_Deps(extractor, ocr))
 
     assert result["items"][0]["verdict"] == "unknown"
     assert seen and all(not path.exists() for path in seen)
@@ -195,18 +199,22 @@ def test_video_id_comes_from_the_trailing_digits() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 6. The switch is a config flag, never a prompt
+# 6. The switch is a config flag, never a prompt -- and it defaults to OFF
 # --------------------------------------------------------------------------- #
-def test_disabled_switch_short_circuits_without_touching_files(tmp_path: Path) -> None:
+def test_switch_is_off_by_default_and_when_disabled(tmp_path: Path) -> None:
     video = _write_video(tmp_path, "作者_机械鸭机器人_9999999999999999999.mp4")
-    config = {"jobs": {"material_replication": {"visual_verify": {"enabled": False}}}}
 
     def extractor(source: Path, destination: Path) -> list[Path]:
-        raise AssertionError("停用后不应触碰 ffmpeg")
+        raise AssertionError("未显式启用时不应触碰 ffmpeg")
 
     def ocr(frame: Path) -> str:
-        raise AssertionError("停用后不应触碰 OCR")
+        raise AssertionError("未显式启用时不应触碰 OCR")
 
-    result = verify_videos([video], ["机械鸭机器人"], config, deps=_Deps(extractor, ocr))
-
-    assert result == {"enabled": False, "conclusive": False, "items": []}
+    off = {"enabled": False, "conclusive": False, "items": []}
+    # Explicit off switch.
+    assert verify_videos([video], ["机械鸭机器人"], _DISABLED, deps=_Deps(extractor, ocr)) == off
+    # Missing key / missing block / no config at all: a *missing* config key must
+    # leave behaviour identical to before this feature existed, so nothing may be
+    # extracted.  It must also never raise on a short config.
+    for config in ({}, {"jobs": {}}, {"jobs": {"material_replication": {}}}, None):
+        assert verify_videos([video], ["机械鸭机器人"], config, deps=_Deps(extractor, ocr)) == off

@@ -549,23 +549,59 @@ def run_material_replication(
     # reported separately (``prefilter`` vs ``download_budget``).  Visual
     # quality is the user's top priority but is undecidable pre-download, so the
     # order is relevance -> heat -> video_id and the limitation is stated.
-    relevance_detail = relevance_report(candidates, theme, keywords_requested)
+    relevance_detail = relevance_report(candidates, theme, keywords_requested, config=config)
     relevance: dict[str, float] = relevance_detail["scores"]
+    # "Relevance could not discriminate this pool" is a *degradation of the whole
+    # delivery*, not a private detail of the ordering: the 9.14 corpus had four
+    # runs (机械鸭 / 充电宝3C / 内存涨价 / 华为昇腾950DT) whose relevance was
+    # degraded while the top level reported ``degraded=False, status="done"`` --
+    # i.e. a false pass that was invisible to every upstream reader.  All four were
+    # full runs (``mode: null`` in ``run_log.json``), so the OR below lands on the
+    # full path's single top-level ``degraded``.  The download-only path keeps its
+    # own contract (it never had a ``degraded`` computed from relevance, and its
+    # ``search_attribution.relevance`` block already carries the flag).
+    relevance_degraded = bool(relevance_detail["degraded"])
     # Attribution lives in ``search_attribution`` (additive) so a reader can tell
     # *why* the order looks the way it does: which terms actually matched this
-    # pool and which were dead on arrival.
+    # pool and which were dead on arrival.  The subject fields are what makes the
+    # warning below auditable: ``hit_ratio`` is the share of the pool that
+    # mentions the theme's subject at all, which is a different question from the
+    # per-term scores.  ``.get`` keeps this readable if the report ever lacks them.
     search_attribution["relevance"] = {
         "live_terms": list(relevance_detail["live_terms"]),
         "dead_terms": list(relevance_detail["dead_terms"]),
         "live_count": int(relevance_detail["live_count"]),
-        "degraded": bool(relevance_detail["degraded"]),
+        "degraded": relevance_degraded,
+        "hit_ratio": relevance_detail.get("hit_ratio"),
+        "subject_terms": list(relevance_detail.get("subject_terms") or []),
+        "subject_hits": relevance_detail.get("subject_hits"),
     }
-    if relevance_detail["degraded"]:
-        warnings.append(
-            "题材相关度无法区分本轮候选池："
-            f"{len(relevance_detail['terms'])} 个搜索词均未在任何候选标题中命中，"
-            "下载顺序退化为热度 → video_id；请检查主题措辞或候选池来源。"
-        )
+    if relevance_degraded:
+        # Two distinct causes must not share one sentence: "no term hit anything"
+        # and "too few candidates hit the subject" are different defects with
+        # different fixes, and the reader must not be told the wrong one.  Today
+        # only the first can trigger ``degraded`` (``live_count == 0``); the
+        # hit-ratio floor that makes the second reachable is configured inside
+        # ``relevance_report``, so the ratio is read defensively here: if it is
+        # ever absent the cause is still named correctly, only the number is
+        # omitted -- the branch never invents a value and never raises.
+        if int(relevance_detail["live_count"]) > 0:
+            try:
+                hit_ratio: float | None = float(relevance_detail["hit_ratio"])
+            except (KeyError, TypeError, ValueError):
+                hit_ratio = None
+            measured = f"主体词命中率 {round(hit_ratio, 4)}，" if hit_ratio is not None else ""
+            warnings.append(
+                "题材相关度命中率过低："
+                f"{measured}主体词未覆盖足够的候选标题，"
+                "相关度无法有效区分本轮候选池；请检查主题措辞或候选池来源。"
+            )
+        else:
+            warnings.append(
+                "题材相关度无法区分本轮候选池："
+                f"{len(relevance_detail['terms'])} 个搜索词均未在任何候选标题中命中，"
+                "下载顺序退化为热度 → video_id；请检查主题措辞或候选池来源。"
+            )
     budget: DownloadBudget | None = DownloadBudget.from_config(config)
 
     # --- Download-only ----------------------------------------------------
@@ -818,7 +854,7 @@ def run_material_replication(
     ffmpeg_ok = media_tool_available(config, "ffmpeg")
     ffmpeg_status = "ok" if ffmpeg_ok else "unavailable"
     ffmpeg_arg = resolve_media_tool(config, "ffmpeg") if ffmpeg_ok else None
-    degraded = not ffmpeg_ok or face_status["status"] != "ok"
+    degraded = not ffmpeg_ok or face_status["status"] != "ok" or relevance_degraded
     if not ffmpeg_ok:
         warnings.append("ffmpeg 不可用，片段将退化为原片与区间清单")
     if face_status["status"] != "ok":

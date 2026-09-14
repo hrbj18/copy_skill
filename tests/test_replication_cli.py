@@ -249,6 +249,132 @@ def test_full_run_marks_degraded_when_face_sampling_fails(tmp_path: Path, monkey
     assert any("人脸采样失败" in warning for warning in manifest["warnings"])
 
 
+# --------------------------------------------------------------------------- #
+# T3a: relevance degradation must reach the top level
+#
+# The 9.14 corpus shipped four deliveries (机械鸭 / 充电宝 3C / 内存涨价 /
+# 华为昇腾950DT) whose ``search_attribution.relevance.degraded`` was ``true``
+# while the top level said ``degraded=false, status="done"`` -- a false pass that
+# no upstream reader could see.  These tests pin both directions of the OR, and
+# the two distinct warning causes.
+# --------------------------------------------------------------------------- #
+def _healthy_tooling(monkeypatch) -> None:
+    """ffmpeg/ffprobe "present" and no real frame decoding -- nothing degrades."""
+    from douyin_intelligence.replication_selection import VisualMetrics
+
+    monkeypatch.setattr("douyin_intelligence.replication_pipeline.media_tool_available", lambda config, name: True)
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_selection.compute_visual_metrics",
+        lambda *args, **kwargs: VisualMetrics(
+            sampled_frames=10, motion_frame_ratio=0.9, ocr_text_frame_ratio=0.0, visual_ok=True,
+        ),
+    )
+
+
+def _themed_rows(theme_title: str) -> list[dict]:
+    rows = [
+        _row("7300000000000000001", "作者A", url="https://signed.example/1"),
+        _row("7300000000000000002", "作者B", url="https://signed.example/2"),
+    ]
+    for row in rows:
+        row["desc"] = theme_title
+    return rows
+
+
+def _run(tmp_path: Path, rows: list[dict]) -> tuple[dict, dict, dict]:
+    result = run_material_replication(
+        _config(tmp_path), "苹果折叠屏手机", business_date="2026-09-12", deps=_deps(tmp_path, rows),
+    )
+    output_dir = Path(result["output_dir"])
+    manifest = json.loads((output_dir / "清单.json").read_text(encoding="utf-8"))
+    run_log = json.loads((output_dir / "05-过程数据" / "run_log.json").read_text(encoding="utf-8"))
+    return result, manifest, run_log
+
+
+def test_relevance_degradation_reaches_top_level_degraded(tmp_path: Path, monkeypatch) -> None:
+    """No term hits the pool -> relevance cannot discriminate -> degraded=True."""
+    _healthy_tooling(monkeypatch)
+    # Synthetic titles carry no theme term, so ``live_count == 0``.
+    result, manifest, run_log = _run(tmp_path, _themed_rows("标题-无主题词"))
+
+    assert run_log["search_attribution"]["relevance"]["degraded"] is True
+    assert run_log["search_attribution"]["relevance"]["live_count"] == 0
+    # The whole point: the false pass is gone.
+    assert result["degraded"] is True
+    assert manifest["degraded"] is True
+    assert run_log["degraded"] is True
+    assert result["status"] == "partial"
+    # ...and the cause is named, with the pre-existing wording unchanged.
+    warning = next(item for item in result["warnings"] if "题材相关度" in item)
+    assert warning.startswith("题材相关度无法区分本轮候选池：")
+    assert "均未在任何候选标题中命中" in warning
+    assert "命中率过低" not in warning
+
+
+def test_healthy_relevance_leaves_top_level_degraded_false(tmp_path: Path, monkeypatch) -> None:
+    """The ``degraded=False`` direction: nothing is degraded unless it is."""
+    _healthy_tooling(monkeypatch)
+    result, manifest, run_log = _run(tmp_path, _themed_rows("苹果折叠屏手机 折叠屏上手体验"))
+
+    assert run_log["search_attribution"]["relevance"]["degraded"] is False
+    assert run_log["search_attribution"]["relevance"]["live_count"] > 0
+    assert result["degraded"] is False
+    assert manifest["degraded"] is False
+    assert not [item for item in result["warnings"] if "题材相关度" in item]
+
+
+def _forced_report(*, degraded: bool, live_count: int, hit_ratio: object = None):
+    """Real scores, but a forced ``degraded``/``live_count``/``hit_ratio``.
+
+    ``hit_ratio=None`` removes the key entirely, which is how the pre-T2 report
+    looked; the pipeline must cope without either.
+    """
+    from douyin_intelligence.replication_selection import relevance_report as real_report
+
+    def report(candidates, theme, keywords=None, *, config=None):
+        payload = dict(real_report(candidates, theme, keywords, config=config))
+        payload["degraded"] = degraded
+        payload["live_count"] = live_count
+        if hit_ratio is None:
+            payload.pop("hit_ratio", None)
+        else:
+            payload["hit_ratio"] = hit_ratio
+        return payload
+    return report
+
+
+def test_low_hit_ratio_has_its_own_warning_and_still_degrades(tmp_path: Path, monkeypatch) -> None:
+    """The reserved branch: degraded because the subject hit too *few* candidates."""
+    _healthy_tooling(monkeypatch)
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_pipeline.relevance_report",
+        _forced_report(degraded=True, live_count=2, hit_ratio=0.25),
+    )
+    result, manifest, _run_log = _run(tmp_path, _themed_rows("苹果折叠屏手机 上手"))
+
+    assert result["degraded"] is True and manifest["degraded"] is True
+    warning = next(item for item in result["warnings"] if "题材相关度" in item)
+    assert warning.startswith("题材相关度命中率过低：")
+    assert "0.25" in warning
+    assert "均未在任何候选标题中命中" not in warning
+
+
+def test_low_hit_ratio_warning_without_the_field_never_raises(tmp_path: Path, monkeypatch) -> None:
+    """``hit_ratio`` absent: no invented number, no crash, cause still named."""
+    _healthy_tooling(monkeypatch)
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_pipeline.relevance_report",
+        _forced_report(degraded=True, live_count=2, hit_ratio=None),
+    )
+    result, manifest, _run_log = _run(tmp_path, _themed_rows("苹果折叠屏手机 上手"))
+
+    assert result["degraded"] is True and manifest["degraded"] is True
+    warning = next(item for item in result["warnings"] if "题材相关度" in item)
+    assert warning.startswith("题材相关度命中率过低：")
+    assert "主体词命中率" not in warning
+    assert "均未在任何候选标题中命中" not in warning
+
+
 def test_script_not_found_is_attributable_in_manifest_and_run_log(tmp_path: Path, monkeypatch) -> None:
     config = _config(tmp_path)
     rows = [

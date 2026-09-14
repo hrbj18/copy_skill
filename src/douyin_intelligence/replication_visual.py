@@ -69,11 +69,15 @@ def verify_videos(
     confirmation.  Never raises.
     """
     settings = visual_verify_settings(config)
-    if not settings.get("enabled", True):
+    # Default OFF: the project's hard constraint is that a *missing* config key
+    # must leave behaviour byte-for-byte identical to before this feature
+    # existed.  A default-on switch would silently add frame extraction to every
+    # existing run, so the gate only runs when the batch explicitly enables it.
+    if not settings.get("enabled", False):
         return {"enabled": False, "conclusive": False, "items": []}
 
     terms = [str(term).casefold().strip() for term in subject_terms or [] if str(term or "").strip()]
-    extract_frames = _frame_extractor(config if isinstance(config, dict) else {}, settings, deps)
+    extract_frames = _frame_extractor(config, settings, deps)
     ocr_frame = _ocr_frame(deps)
 
     items: list[dict[str, Any]] = []
