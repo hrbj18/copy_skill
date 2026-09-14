@@ -17,7 +17,10 @@ word already identifies (``苹果折叠屏`` -> ``折叠屏 折痕``) keeps the 
 spelling, so a theme with nothing detachable expands exactly as it did before.
 Subjects listed in ``_SUBJECT_ALIASES`` additionally contribute the platform's
 own spellings (``机器鸭`` for ``机械鸭``), because a theme written in our wording
-can be absent from the platform's vocabulary.
+can be absent from the platform's vocabulary.  The *subject vocabulary* used by
+the relevance gate (``subject_terms``) is further split on CJK<->non-CJK script
+boundaries, because a whitespace-free theme (``充电宝3C认证新规``) would otherwise
+leave one whole-phrase token that no title can ever match.
 """
 
 from __future__ import annotations
@@ -89,6 +92,32 @@ _SUBJECT_ALIASES: dict[str, tuple[str, ...]] = {
 # signal for finding hands-on / real-shot clips, so they are interleaved early
 # (see ``_LANE_CYCLE``) instead of being appended as a last-resort pad.
 _FALLBACK_SUFFIXES = ("实测", "开箱", "对比", "评测", "上手", "新品")
+
+# Script-boundary runs inside a token: maximal CJK stretches and maximal
+# everything-else stretches.  ``充电宝3C认证新规`` -> 充电宝 | 3C | 认证新规.  Used by
+# ``_subject_split_terms`` to break a *whitespace-free* theme into pieces a
+# title can actually contain.
+_SCRIPT_RUN = re.compile(r"[\u4e00-\u9fff]+|[^\u4e00-\u9fff]+")
+
+# Pure event/status words.  They carry no product identity, so a run made only
+# of these must never become a standalone subject term: 「涨价」 on its own would
+# admit every price-rise video whatever the product.
+_SUBJECT_EVENT_WORDS: tuple[str, ...] = (
+    "涨价",
+    "降价",
+    "暴涨",
+    "暴跌",
+    "上涨",
+    "下跌",
+    "涨幅",
+    "跌幅",
+    "最新",
+    "消息",
+    "曝光",
+    "传闻",
+    "回应",
+    "辟谣",
+)
 
 # Deterministic round-robin order over the keyword "lanes".  Intent words carry
 # a double weight (three entries per cycle) so at least three of them survive
@@ -387,17 +416,71 @@ def expand_keywords(theme: str, config: dict[str, Any]) -> list[str]:
     return ordered[:max_keywords]
 
 
+def _script_runs(text: str) -> list[str]:
+    """Split ``text`` on CJK <-> non-CJK boundaries (``RTX5090涨价`` -> 2 runs)."""
+    return _SCRIPT_RUN.findall(str(text or ""))
+
+
+def _is_specific_subject_run(run: str) -> bool:
+    """Whether ``run`` can stand alone without admitting unrelated videos.
+
+    A digit/latin run is specific by construction.  A pure-CJK run needs at
+    least 3 characters: ``华为`` is a bare *brand*, so emitting it would admit
+    every Huawei video, and a split that yields it must be distrusted wholesale.
+    """
+    if re.search(r"[0-9A-Za-z]", run):
+        return True
+    runs = _script_runs(run)
+    return bool(runs) and len(runs[0]) >= 3
+
+
+def _subject_split_terms(token: str) -> list[str]:
+    """CJK<->non-CJK runs of ``token`` that may *stand alone* as subject terms.
+
+    A theme written without spaces (``充电宝3C认证新规``) leaves ``head`` a single
+    nine-character token, and ``term_hits_title`` matches a token as one whole
+    phrase -- no title contains those nine consecutive characters, so the
+    relevance gate admits **nothing** (measured on the 9.14 pools: 0/31 and
+    0/17).  Splitting the token on script boundaries fills that hole.
+
+    Deliberately conservative, and the checks run in this order:
+
+    * a single-script token has nothing to split (``苹果折叠屏`` is pure CJK,
+      ``RTX5090`` pure non-CJK), which is what keeps the other nine 9.14 themes
+      byte-for-byte identical;
+    * a run carrying an event/status word is dropped: it has no product
+      identity and would admit every video about that event;
+    * all-or-nothing -- if any *surviving* run is not specific
+      (:func:`_is_specific_subject_run`) the whole split is abandoned, because
+      the split mixes identity into the vocabulary (``华为Mate`` -> ``华为`` +
+      ``Mate`` would admit every Huawei video).
+
+    Returning ``[]`` means "do not split"; the token itself is never dropped.
+    """
+    runs = _script_runs(token)
+    if len(runs) <= 1:
+        return []
+    content = [run for run in runs if not any(word in run for word in _SUBJECT_EVENT_WORDS)]
+    if not content or not all(_is_specific_subject_run(run) for run in content):
+        return []
+    return content
+
+
 def subject_terms(theme: str, config: dict[str, Any]) -> list[str]:
     """Return the theme's *subject vocabulary*: the tokens a clip must mention.
 
     Every whitespace token of the subject head (``_subject_head``) plus every
     alias of a product noun found in the theme, case-folded and de-duplicated in
-    first-seen order.  This is the vocabulary the relevance gate matches
-    candidate titles against, so the signature is deliberately stable:
+    first-seen order, **plus** the script-boundary runs of those tokens
+    (:func:`_subject_split_terms`).  This is the vocabulary the relevance gate
+    matches candidate titles against, so the signature is deliberately stable:
     ``subject_terms(theme, config) -> list[str]``.
 
     The category words stripped from the head never appear here: matching them
-    is what let unrelated, hotter videos into the pool in the first place.
+    is what let unrelated, hotter videos into the pool in the first place.  The
+    split is **add-only** -- the whole-phrase token always stays -- so recall is
+    monotonically non-decreasing: at worst it admits more of a pool than before,
+    never less.
     """
     settings = (config.get("jobs") or {}).get("material_replication") or {}
     base = _theme_base(theme, settings)
@@ -426,6 +509,13 @@ def subject_terms(theme: str, config: dict[str, Any]) -> list[str]:
         if subject.casefold() in folded:
             for alias in subject_aliases:
                 add(alias)
+    # Add-only second pass over everything added above: a whitespace-free theme
+    # contributes one whole-phrase token, which no title can ever hit, so the
+    # gate would admit nothing at all.  Splitting it on script boundaries fills
+    # that hole without disturbing any single-script (already matchable) token.
+    for token in list(terms):
+        for run in _subject_split_terms(token):
+            add(run)
     return terms
 
 

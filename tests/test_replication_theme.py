@@ -8,6 +8,8 @@ import pytest
 from douyin_intelligence.config import load_config
 from douyin_intelligence.replication_theme import (
     _CATEGORY_ATTRIBUTES,
+    _SUBJECT_ALIASES,
+    _subject_split_terms,
     delivery_folder_name,
     expand_keywords,
     sanitize_theme,
@@ -23,6 +25,36 @@ _INTENT_SUFFIXES = ("实测", "开箱", "对比", "评测", "上手", "新品")
 # qualification, so it pins "themes with nothing detachable are untouched"
 # against a genuine delivery instead of a hand-written list.
 _APPLE_FOLD_FIXTURE = Path(__file__).parent / "fixtures" / "apple_fold_pool.json"
+
+# The 9.14 corpus' eleven real themes (recovered from each delivery's 清单.json,
+# not from the truncated folder names) and the ``subject_terms`` vocabulary each
+# produced *before* T1b's script-boundary split.  Offline recomputation:
+# ``.tmp/predict_gate_0914.py``.
+_PRE_SPLIT_VOCAB: dict[str, list[str]] = {
+    "DeepSeek V4.1 Flash": ["DeepSeek", "V4.1", "Flash"],
+    "iRobot Roomba 875 扫地机器人": ["iRobot", "Roomba", "875", "扫地机器人", "扫地机"],
+    "Microduck 机械鸭机器人": ["Microduck", "机械鸭", "机器鸭", "机械鸭子"],
+    "充电宝3C认证新规": ["充电宝3C认证新规"],
+    "内存涨价 最贵装机季": ["内存涨价", "最贵装机季"],
+    "华为Mate XT2 非凡大师": ["华为Mate", "XT2", "非凡大师"],
+    "华为昇腾950DT涨价": ["华为昇腾950DT涨价"],
+    "大疆 Osmo Pocket 4 Pro": ["大疆", "Osmo", "Pocket", "4", "Pro"],
+    "显卡涨价 RTX5090": ["显卡涨价", "RTX5090"],
+    "特斯拉 Cybercab 无人驾驶": ["特斯拉", "Cybercab", "无人驾驶"],
+    "苹果 iPhone Duo 折叠屏": ["苹果", "iPhone", "Duo", "折叠机", "折屏"],
+}
+
+# The two whitespace-free themes whose single whole-phrase token admitted 0/31
+# and 0/17 candidates: T1b's script-boundary split is *supposed* to change these.
+_HOLE_THEMES = ("充电宝3C认证新规", "华为昇腾950DT涨价")
+
+# Regression lock: nine of the eleven themes have no multi-script token to split
+# and must keep their vocabulary byte-for-byte (acceptance criterion A5).
+_UNCHANGED_VOCAB: dict[str, list[str]] = {
+    theme: terms for theme, terms in _PRE_SPLIT_VOCAB.items() if theme not in _HOLE_THEMES
+}
+
+_ALIAS_VOCAB: set[str] = {alias for values in _SUBJECT_ALIASES.values() for alias in values}
 
 
 def _bare_category_pairs() -> set[str]:
@@ -238,3 +270,84 @@ def test_subject_aliases_config_extends_and_overrides_the_builtin_table() -> Non
     # A malformed value is ignored, leaving the built-in table in charge.
     config["jobs"]["material_replication"]["subject_aliases"] = "不是字典"
     assert "机器鸭" in subject_terms("Microduck 机械鸭机器人", config)
+
+
+def test_subject_terms_splits_a_whitespace_free_theme_on_script_boundaries() -> None:
+    """T1b: a theme without spaces must not stay one whole-phrase token.
+
+    ``term_hits_title`` matches a token as one whole phrase, so the single
+    nine-character token admitted **nothing** (0/31 and 0/17 on the real 9.14
+    pools) -- switching the gate on would have failed those periods outright.
+    """
+    config = load_config()
+
+    assert subject_terms("充电宝3C认证新规", config) == ["充电宝3C认证新规", "充电宝", "3C", "认证新规"]
+    assert subject_terms("华为昇腾950DT涨价", config) == ["华为昇腾950DT涨价", "华为昇腾", "950DT"]
+
+
+def test_subject_terms_is_byte_identical_for_single_script_themes() -> None:
+    """Regression lock ①: nothing to split, so nothing may change."""
+    config = load_config()
+
+    assert subject_terms("苹果折叠屏", config) == ["苹果折叠屏", "折叠机", "折屏"]
+    assert subject_terms("RTX5090", config) == ["RTX5090"]
+
+
+def test_subject_terms_keeps_the_nine_unchanged_9_14_vocabularies() -> None:
+    """Regression lock ②: nine of the eleven real themes keep their vocabulary."""
+    config = load_config()
+
+    for theme, expected in _UNCHANGED_VOCAB.items():
+        assert subject_terms(theme, config) == expected, theme
+
+
+def test_subject_terms_abandons_a_split_that_yields_a_bare_brand() -> None:
+    """All-or-nothing: 「华为Mate」 -> 华为 + Mate would admit every Huawei video."""
+    config = load_config()
+
+    assert subject_terms("华为Mate", config) == ["华为Mate"]
+    assert subject_terms("华为Mate XT2 非凡大师", config) == ["华为Mate", "XT2", "非凡大师"]
+
+
+def test_split_guard_never_splits_a_single_script_token() -> None:
+    """Guard ①: a pure-CJK or pure-non-CJK token has nothing to split."""
+    assert _subject_split_terms("苹果折叠屏") == []
+    assert _subject_split_terms("RTX5090") == []
+    assert _subject_split_terms("Microduck") == []
+
+
+def test_split_guard_never_emits_a_pure_event_word() -> None:
+    """Guard ②: 「涨价」 has no product identity, so it never stands alone."""
+    config = load_config()
+
+    assert _subject_split_terms("华为昇腾950DT涨价") == ["华为昇腾", "950DT"]
+    assert _subject_split_terms("涨价") == []
+    assert "涨价" not in subject_terms("华为昇腾950DT涨价", config)
+
+
+def test_split_guard_is_all_or_nothing() -> None:
+    """Guard ③: one non-specific run poisons the whole split."""
+    assert _subject_split_terms("华为Mate") == []
+    assert _subject_split_terms("华为P70") == []
+    # 「内存」 is only 2 CJK characters: the split is dropped, not trimmed.
+    assert _subject_split_terms("内存涨价") == []
+
+
+def test_subject_terms_split_is_add_only_and_invents_no_vocabulary() -> None:
+    """Invariant: the split only adds terms, and only terms the theme supplies."""
+    config = load_config()
+
+    for theme, pre_split in _PRE_SPLIT_VOCAB.items():
+        terms = subject_terms(theme, config)
+        # ① recall is monotonically non-decreasing: the old vocabulary survives.
+        assert set(pre_split) <= set(terms), theme
+        # ② add-only never reorders: the pre-split vocabulary stays the prefix.
+        assert terms[: len(pre_split)] == pre_split, theme
+        # ③ still case-fold de-duplicated (other modules consume it directly).
+        assert len(terms) == len({term.casefold() for term in terms}), theme
+        # ④ no invented vocabulary: every term comes from the theme or an alias.
+        sanitized = sanitize_theme(theme, max_length=48)
+        for term in terms:
+            assert term in sanitized or term in _ALIAS_VOCAB, (theme, term)
+        for added in terms[len(pre_split):]:
+            assert added.casefold() in sanitized.casefold(), (theme, added)

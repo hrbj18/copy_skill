@@ -232,6 +232,18 @@ def _gate_config(min_hit_ratio: float) -> dict:
     return config
 
 
+def _config_without_gate() -> dict:
+    """``load_config()`` minus the gate key.
+
+    The shipped config *does* enable the gate (that is the point of this round),
+    so the absent-key contract below cannot be pinned with ``load_config()``
+    itself -- it has to be exercised on a config that really lacks the key.
+    """
+    config = load_config()
+    config["jobs"]["material_replication"].pop("relevance_gate", None)
+    return config
+
+
 def test_relevance_report_without_the_gate_key_is_unchanged() -> None:
     """No ``relevance_gate`` in the config ⇒ the historic ``live_count == 0`` rule.
 
@@ -242,7 +254,7 @@ def test_relevance_report_without_the_gate_key_is_unchanged() -> None:
     bare = relevance_report(candidates, "苹果折叠屏", ["苹果折叠屏", "Apple折叠屏"])
     none_config = relevance_report(candidates, "苹果折叠屏", ["苹果折叠屏", "Apple折叠屏"], config=None)
     with_gate_absent = relevance_report(
-        candidates, "苹果折叠屏", ["苹果折叠屏", "Apple折叠屏"], config=load_config()
+        candidates, "苹果折叠屏", ["苹果折叠屏", "Apple折叠屏"], config=_config_without_gate()
     )
     for report in (bare, none_config, with_gate_absent):
         assert report["degraded"] == (report["live_count"] == 0) is False
