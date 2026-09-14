@@ -39,6 +39,7 @@ third_party/MediaCrawler/*_user_data_dir/
 .pytest_*
 director-pytest-*/
 .tmp/
+logs/
 
 # Local browser inspection snapshots and session notes
 _bstate*.json
