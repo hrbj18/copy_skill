@@ -10,6 +10,8 @@
 - 对无主播、以画面文字为主的视频进行有限抽帧和 OCR。
 - 从受限公开新闻源和固定查询矩阵发现科技事件线索。
 - 为少量已选新闻查找视觉素材，并输出每日素材交换包。
+- 按主题执行素材复刻：扩展关键词、采集候选池，在下载前做主体词准入与时效过滤，产出 `MM.DD<主题>复刻视频/` 交付目录。
+- 对入选源片自动抽帧 OCR 做视觉佐证，并对交付素材做跨期去重。
 - 提供 Windows 图形工作台和命令行入口。
 
 抖音数据只用于发现选题和观察传播情况，不能证明新闻内容真实。公开网页搜索结果同样只是线索；面向发布的事实仍需由下游编辑核验。
@@ -71,6 +73,14 @@ uv run douyin-intelligence workbench
 ```powershell
 uv run douyin-intelligence daily-material-exchange run --business-date 2026-09-08
 ```
+
+按主题复刻素材（产出交付目录，不进入仓库）：
+
+```powershell
+uv run douyin-intelligence material-replication run --theme "<主题>" --pool-size 120 --business-date 2026-09-15
+```
+
+`material-replication` 的准入闸门、视觉佐证与体积口径见 `docs/handoff/CURRENT_STATUS.md`。
 
 真实网络、浏览器和模型步骤都有外部依赖。运行结果中的 `success`、`partial`、`empty` 和错误记录应按实际状态解释。
 
