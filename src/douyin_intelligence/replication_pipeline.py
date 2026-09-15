@@ -65,7 +65,13 @@ from .replication_selection import (
     select_script_replica,
     validate_probe,
 )
-from .replication_theme import delivery_folder_name, project_path, sanitize_theme, subject_terms
+from .replication_theme import (
+    delivery_folder_name,
+    event_terms,
+    project_path,
+    sanitize_theme,
+    subject_terms,
+)
 from .replication_validation import (
     build_validation_block,
     record_validation,
@@ -998,6 +1004,17 @@ def run_material_replication(
     max_per_video = int(clips_cfg.get("max_per_video") or 2)
     max_total = int(clips_cfg.get("max_total") or 12)
     keep_source = bool((settings.get("retention") or {}).get("keep_source_video", True))
+    # ``material_replica.direct_delivery`` (opt-in, 2026-09-16): ship each
+    # selected source as a *whole file* instead of exporting 3~8 s face-free
+    # clips.  A "figure + event" theme has no use for 8-second fragments: its
+    # material is a full interview (the event itself) plus generic portraits of
+    # the same people (waving, greeting) that carry no event at all.  When the
+    # key is absent or disabled every line below is the historical behaviour,
+    # byte for byte -- the branches only exist behind ``direct_mode``.
+    direct_cfg = settings.get("direct_delivery") or {}
+    direct_mode = bool(direct_cfg.get("enabled"))
+    direct_event_terms = event_terms(theme or "", config) if direct_mode else []
+    direct_min_seconds = float(direct_cfg.get("main_min_seconds") or 0)
 
     ordered = sorted(
         selected,
@@ -1010,16 +1027,54 @@ def run_material_replication(
     )
     main_ids: set[str] = set()
     seen_authors: set[str] = set()
-    for item in ordered:
-        if len(main_ids) >= 2:
-            break
-        if str(item["face"].get("face_class")) != FACE_FREE:
-            continue
-        author = item["candidate"].author
-        if author in seen_authors:
-            continue
-        seen_authors.add(author)
-        main_ids.add(item["candidate"].video_id)
+    if direct_mode:
+
+        def _direct_main_key(item: dict[str, Any]) -> tuple[Any, ...]:
+            """Event-carrying first, then longest, then hottest.
+
+            A full interview *is* the event, so it must outrank a generic
+            portrait of the same person even when the portrait has more heat.
+            ``theme_event_terms`` supplies the vocabulary that tells the two
+            apart; with none configured nothing can discriminate, so length
+            decides and the run degrades gracefully instead of shipping nothing.
+            """
+            title = str(item["candidate"].title or "").casefold()
+            hits = sum(1 for term in direct_event_terms if term.casefold() in title)
+            duration = float(item["probe"].get("duration_seconds") or 0)
+            return (-hits, -duration, -float(item["candidate"].heat_score), item["candidate"].video_id)
+
+        def _fill_main(min_seconds: float) -> None:
+            for item in sorted(ordered, key=_direct_main_key):
+                if len(main_ids) >= 2:
+                    break
+                duration = float(item["probe"].get("duration_seconds") or 0)
+                if min_seconds and duration < min_seconds:
+                    continue
+                author = item["candidate"].author
+                if author in seen_authors:
+                    continue
+                seen_authors.add(author)
+                main_ids.add(item["candidate"].video_id)
+
+        _fill_main(direct_min_seconds)
+        if not main_ids and direct_min_seconds:
+            # The length floor keeps a short generic portrait from being mistaken
+            # for an interview.  When *nothing* in the pool is long enough, an
+            # empty 02-主素材 is the worse outcome -- a themed run over
+            # short-form footage would ship with no main material at all -- so
+            # the floor degrades to "longest available".
+            _fill_main(0.0)
+    else:
+        for item in ordered:
+            if len(main_ids) >= 2:
+                break
+            if str(item["face"].get("face_class")) != FACE_FREE:
+                continue
+            author = item["candidate"].author
+            if author in seen_authors:
+                continue
+            seen_authors.add(author)
+            main_ids.add(item["candidate"].video_id)
 
     main_dir = stage / FOLDER_MAIN
     support_dir = stage / FOLDER_SUPPORT
@@ -1109,6 +1164,59 @@ def run_material_replication(
             "published_at": candidate.published_at,
         })
 
+        face_block = {
+            "backend": face.get("backend", FACE_UNAVAILABLE),
+            "status": face.get("status", FACE_UNAVAILABLE),
+            "face_frame_ratio": face.get("face_frame_ratio", 0.0),
+            "max_face_area_ratio": face.get("max_face_area_ratio", 0.0),
+            "face_class": face.get("face_class", FACE_UNAVAILABLE),
+            "face_class_reason": face.get("face_class_reason", ""),
+            "sampled_frames": face.get("sampled_frames", 0),
+            "expected_frames": face.get("expected_frames"),
+            "emitted_frames": face.get("emitted_frames"),
+            "sample_coverage": face.get("sample_coverage"),
+            "truncated": bool(face.get("truncated", False)),
+            "low_confidence": bool(face.get("low_confidence", False)),
+        }
+        media_block = {"width": probe.get("width"), "height": probe.get("height"), "fps": probe.get("fps"), "has_audio": True}
+        if direct_mode:
+            # Whole-file delivery: the source video *is* the material, so nothing
+            # is cut and the face hard gate is deliberately not re-applied --
+            # opting in means the operator wants footage with people in it
+            # (a full interview, an on-site recording).  The face numbers are
+            # still recorded on the row, so a reader can always see what shipped.
+            direct_clip_id = f"{'main' if is_main else 'support'}-{seq:02d}"
+            file_name = f"{prefix}.mp4"
+            try:
+                shutil.copy2(item["video_path"], target_dir / file_name)
+            except OSError as exc:
+                warnings.append(f"{candidate.video_id} 原片直投失败：{exc}")
+                degraded = True
+                continue
+            metadata = build_clip_metadata(
+                clip_id=direct_clip_id, role=role, file_name=f"{target_folder}/{file_name}",
+                source={
+                    "video_id": candidate.video_id,
+                    "author": candidate.author,
+                    "source_url": candidate.source_url,
+                    "play_count": candidate.play_count,
+                    "heat_score": candidate.heat_score,
+                    "folder": source_rel,
+                },
+                timecode={"start": 0.0, "end": duration, "duration": duration},
+                media=media_block, face=face_block, suggested_use=suggested_use, warnings=[],
+            )
+            atomic_write_json(target_dir / f"{prefix}.json", metadata)
+            (main_materials if is_main else supporting_materials).append({
+                "clip_id": direct_clip_id,
+                "file": metadata["file"],
+                "duration": duration,
+                "face_class": face_block["face_class"],
+                "suggested_use": suggested_use,
+            })
+            clips_exported += 1
+            continue
+
         face_per_frame = face.get("face_per_frame") or []
         intervals = derive_face_free_intervals(
             [bool(flag) for flag in face_per_frame], duration,
@@ -1127,21 +1235,6 @@ def run_material_replication(
         if export.get("degraded"):
             degraded = True
             warnings.extend(export.get("warnings") or [])
-        face_block = {
-            "backend": face.get("backend", FACE_UNAVAILABLE),
-            "status": face.get("status", FACE_UNAVAILABLE),
-            "face_frame_ratio": face.get("face_frame_ratio", 0.0),
-            "max_face_area_ratio": face.get("max_face_area_ratio", 0.0),
-            "face_class": face.get("face_class", FACE_UNAVAILABLE),
-            "face_class_reason": face.get("face_class_reason", ""),
-            "sampled_frames": face.get("sampled_frames", 0),
-            "expected_frames": face.get("expected_frames"),
-            "emitted_frames": face.get("emitted_frames"),
-            "sample_coverage": face.get("sample_coverage"),
-            "truncated": bool(face.get("truncated", False)),
-            "low_confidence": bool(face.get("low_confidence", False)),
-        }
-        media_block = {"width": probe.get("width"), "height": probe.get("height"), "fps": probe.get("fps"), "has_audio": True}
         for row in export.get("clips") or []:
             if row.get("status") != "ok" or not row.get("file"):
                 warnings.append(f"{candidate.video_id} 片段 {row.get('index')} 切片失败")
@@ -1285,6 +1378,16 @@ def run_material_replication(
         face_truncated_samples=face_truncated_samples or None,
     )
     manifest["material_replica"] = material_replica_block
+    if direct_mode:
+        # Present only in the opt-in whole-file mode, so a config without the key
+        # keeps the delivered manifest byte-identical.  ``validate_delivery_manifest``
+        # reads this to know the face hard gate is deliberately waived: the
+        # operator asked for footage with people in it.
+        manifest["direct_delivery"] = {
+            "enabled": True,
+            "event_terms": list(direct_event_terms),
+            "main_min_seconds": direct_min_seconds,
+        }
     if material_freshness is not None:
         # Present only when ``material_replica.max_age_days`` is set, so a config
         # without the key keeps the delivered manifest byte-identical.

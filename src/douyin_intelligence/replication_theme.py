@@ -406,6 +406,55 @@ def _explicit_theme_subject_terms(settings: dict[str, Any], theme: str, base: st
     return []
 
 
+def _explicit_theme_event_terms(settings: dict[str, Any], theme: str, base: str) -> list[str]:
+    """``jobs.material_replication.theme_event_terms[<主题>]``, or ``[]``.
+
+    The third sibling of :func:`_explicit_theme_keywords` /
+    :func:`_explicit_theme_subject_terms`, and again a *separate* key on purpose.
+    Those two decide **what may enter the pool**; this one decides **how the
+    delivered sources are classified** once a run stops exporting 3~8 s clips
+    and starts shipping whole files (``material_replica.direct_delivery``).
+
+    A "figure + event" theme -- a tech leader's gesture, a phone call, a factory
+    visit -- is covered by two very different kinds of footage: the event itself
+    (a full interview, the on-site recording) and generic portraits of the same
+    people (waving, walking, greeting) that carry no event at all.  Only the
+    first group is the *main* material.  Reusing the subject table for this
+    would let a loosening of the relevance gate silently re-partition the
+    delivery, which is exactly the coupling the two-table split exists to
+    prevent.
+
+    Both the raw ``theme`` and its stripped ``base`` are accepted as keys.
+    Absent / blank / malformed -> ``[]``, and the caller then falls back to
+    duration ordering.
+    """
+    table = settings.get("theme_event_terms")
+    if not isinstance(table, dict):
+        return []
+    for key in (str(theme or "").strip(), str(base or "").strip()):
+        if not key:
+            continue
+        value = table.get(key)
+        if isinstance(value, list):
+            return [str(item).strip() for item in value if str(item).strip()]
+    return []
+
+
+def event_terms(theme: str, config: dict[str, Any]) -> list[str]:
+    """Return the theme's *event vocabulary* (see ``_explicit_theme_event_terms``).
+
+    Consumed only by ``direct_delivery``, to split a whole-file delivery into
+    "the event itself" (main) and "generic portraits" (support).  ``[]`` when the
+    operator supplied nothing -- hence no behaviour change for a config that does
+    not opt in: the caller keeps its historical face-based selection untouched.
+    """
+    settings = (config.get("jobs") or {}).get("material_replication") or {}
+    base = _theme_base(theme, settings)
+    if not base:
+        return []
+    return _explicit_theme_event_terms(settings, theme, base)
+
+
 def expand_keywords(theme: str, config: dict[str, Any]) -> list[str]:
     """Expand ``theme`` into ``min_keywords``~``max_keywords`` in-domain keywords.
 

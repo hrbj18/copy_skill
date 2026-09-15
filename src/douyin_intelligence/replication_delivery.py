@@ -141,12 +141,19 @@ def validate_delivery_manifest(path: Path) -> dict[str, Any]:
     if not str(payload.get("evidence_disclaimer") or "").strip():
         errors.append("缺少 evidence_disclaimer")
     clips = [*(payload.get("main_materials") or []), *(payload.get("supporting_materials") or [])]
+    # ``direct_delivery`` (opt-in, 2026-09-16) ships whole source files whose
+    # subject is on camera by definition -- a full interview, an on-site
+    # recording.  The operator opted in for exactly that, so the two face rules
+    # below are waived -- but *only* then: without the block the checks are
+    # unchanged, byte for byte.
+    direct_on = bool((payload.get("direct_delivery") or {}).get("enabled"))
     for clip in clips:
-        if str(clip.get("face_class") or "") == FACE_HEAVY:
+        if not direct_on and str(clip.get("face_class") or "") == FACE_HEAVY:
             errors.append(f"片段 {clip.get('clip_id')} 为 face_heavy，违反人脸硬门槛")
-    for clip in payload.get("main_materials") or []:
-        if str(clip.get("face_class") or "") != FACE_FREE:
-            errors.append(f"主素材 {clip.get('clip_id')} 非 face_free")
+    if not direct_on:
+        for clip in payload.get("main_materials") or []:
+            if str(clip.get("face_class") or "") != FACE_FREE:
+                errors.append(f"主素材 {clip.get('clip_id')} 非 face_free")
     return {"status": "pass" if not errors else "fail", "path": str(target.resolve()), "errors": errors}
 
 

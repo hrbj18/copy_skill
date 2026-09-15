@@ -93,17 +93,61 @@ def _iter_json_payload(payload: Any) -> Iterable[dict[str, Any]]:
     yield payload
 
 
+# How many physical lines a single record may be rejoined from.  A title with a
+# raw newline splits a record into 2~3 lines; without a cap, a truncated tail
+# would swallow the rest of the file.
+_MAX_REJOIN_LINES = 5
+
+
 def load_raw_records(path: str | Path) -> list[dict[str, Any]]:
+    """Load one JSON payload, or a JSONL stream, into a flat record list.
+
+    A JSONL file is one record per line -- but the upstream crawler does **not**
+    escape raw newlines inside a title, so a single record can arrive split
+    across several physical lines::
+
+        {"aweme_id": "…", "title": "请入内！全新理想i9，一台更像家的旗舰。 全新#理想i9 ，
+        一台更像家的旗舰。\\n全新形态，旗舰体验，家的温度。
+        \\n请入内，亲自感受。\\n9月16日 19:30见。#理想汽车", "desc": "…"}
+
+    The 2026-09-16 ``理想i9`` run lost its **entire** candidate pool to exactly
+    one such record (127 lines, a single split): the old strict rule -- any bad
+    line voids the whole file -- turned a cosmetic upstream defect into an empty
+    delivery.  So an ``Unterminated string`` failure now *joins* the next line
+    and retries (that is the exact error shape a raw newline produces) while any
+    other malformed line is dropped.  Nothing is ever invented, and a file whose
+    lines are all unparsable still yields ``[]``, so the caller's own
+    "candidate pool is empty" alarm keeps working.
+    """
     source_path = Path(path)
     if source_path.suffix.lower() == ".jsonl":
         rows: list[dict[str, Any]] = []
-        for number, line in enumerate(source_path.read_text(encoding="utf-8-sig").splitlines(), 1):
-            if not line.strip():
+        buffer = ""
+        depth = 0
+        for line in source_path.read_text(encoding="utf-8-sig").splitlines():
+            if not line.strip() and not buffer:
                 continue
+            candidate = f"{buffer}\n{line}" if buffer else line
             try:
-                payload = json.loads(line)
+                # A joined fragment still carries the raw newlines that split it,
+                # and strict JSON forbids control characters inside a string --
+                # hence ``strict=False`` for the rejoined form only.  A normal
+                # line is parsed strictly, exactly as before.
+                payload = json.loads(candidate, strict=not buffer)
             except json.JSONDecodeError as exc:
-                raise ValueError(f"{source_path} 第 {number} 行不是有效 JSON") from exc
+                # Only "unterminated string" means *this record continues on the
+                # next physical line*; any other failure is a genuinely
+                # malformed line and is dropped on its own.  The depth cap stops
+                # a truncated tail from swallowing the rest of the file.
+                if "Unterminated string" in str(exc) and depth < _MAX_REJOIN_LINES:
+                    buffer = candidate
+                    depth += 1
+                    continue
+                buffer = ""
+                depth = 0
+                continue
+            buffer = ""
+            depth = 0
             rows.extend(_iter_json_payload(payload))
         return rows
     try:

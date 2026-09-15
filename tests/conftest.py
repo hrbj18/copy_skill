@@ -48,7 +48,9 @@ _GUARDED_MODULE_PREFIXES = ("test_replication_", "test_face_metrics")
 # "helpfully" re-enable them or delete this constant: a test that exercises one
 # of these features must set the block itself after building its fixture (see
 # test_replication_selection.py / test_replication_cli.py).
-_OPT_IN_MATERIAL_SWITCHES = ("relevance_gate", "visual_verify", "dedup_across_runs")
+_OPT_IN_MATERIAL_SWITCHES = (
+    "relevance_gate", "visual_verify", "dedup_across_runs", "theme_event_terms", "direct_delivery",
+)
 
 # Same contract, one level deeper: switches that live under
 # ``jobs.material_replication.material_replica.*``.  ``max_age_days`` ships at 90

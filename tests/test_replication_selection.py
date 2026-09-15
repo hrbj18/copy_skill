@@ -360,7 +360,9 @@ def test_test_config_strips_the_shipped_opt_in_switches() -> None:
     """
     from douyin_intelligence import config as config_module
 
-    registered = ("relevance_gate", "visual_verify", "dedup_across_runs")
+    registered = (
+        "relevance_gate", "visual_verify", "dedup_across_runs", "theme_event_terms", "direct_delivery",
+    )
     nested_registered = ("max_age_days",)
 
     shipped = json.loads(

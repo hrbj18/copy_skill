@@ -4,7 +4,7 @@ from pathlib import Path
 import shutil
 
 from douyin_intelligence.config import load_config
-from douyin_intelligence.normalize import normalize_files, parse_count, parse_datetime
+from douyin_intelligence.normalize import load_raw_records, normalize_files, parse_count, parse_datetime
 
 
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -52,3 +52,36 @@ def test_creator_directory_restores_configured_account_identity(tmp_path: Path) 
     records = normalize_files([destination], load_config())
     assert records[0].account_id == "48304051157"
     assert records[0].account_name == "benchmark-48304051157"
+
+
+def test_load_raw_records_rejoins_a_record_split_by_a_raw_newline(tmp_path: Path) -> None:
+    """A title containing a raw newline must not void the whole file.
+
+    The 2026-09-16 ``理想i9`` run lost its **entire** candidate pool to one such
+    record: the crawler wrote the title unescaped, so a single JSON object
+    arrived as three physical lines and the old strict rule rejected the file
+    (127 lines, one split).  The joined text must come back verbatim.
+    """
+    path = tmp_path / "search_contents_2026-09-16.jsonl"
+    path.write_text(
+        '{"aweme_id": "1", "title": "第一行\n第二行", "desc": "d"}\n'
+        '{"aweme_id": "2", "title": "ok", "desc": "d"}\n',
+        encoding="utf-8",
+    )
+    rows = load_raw_records(path)
+    assert [row["aweme_id"] for row in rows] == ["1", "2"]
+    assert rows[0]["title"] == "第一行\n第二行"
+
+
+def test_load_raw_records_skips_only_the_malformed_line(tmp_path: Path) -> None:
+    path = tmp_path / "x.jsonl"
+    path.write_text('{"aweme_id": "1"}\nnot json at all\n{"aweme_id": "2"}\n', encoding="utf-8")
+    rows = load_raw_records(path)
+    assert [row["aweme_id"] for row in rows] == ["1", "2"]
+
+
+def test_load_raw_records_all_bad_still_yields_empty(tmp_path: Path) -> None:
+    """Dropping bad lines must not turn a broken file into a silent success."""
+    path = tmp_path / "x.jsonl"
+    path.write_text("nonsense\nmore nonsense\n", encoding="utf-8")
+    assert load_raw_records(path) == []
