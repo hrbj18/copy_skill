@@ -7,7 +7,7 @@ import sys
 import tkinter as tk
 from datetime import datetime, timedelta
 from pathlib import Path
-from tkinter import messagebox, simpledialog, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -22,6 +22,22 @@ from .material_probe import latest_material_probe_report
 from .visual_anchor import latest_visual_anchor_report
 from .daily_material_pack import DailyMaterialPackError, latest_daily_material_pack_report, resolve_daily_material_pack_input
 from .daily_material_exchange import latest_daily_material_exchange_report
+from .workbench_research_pack import (
+    EMPTY_STATUS_TEXT,
+    build_failure_text,
+    consumer_snapshot_root,
+    delivery_episode_id,
+    latest_research_pack,
+    launch_episode_research_pack,
+    research_pack_consumer_status,
+    research_pack_evidence_path,
+    research_pack_folder_target,
+    research_pack_launch_text,
+    research_pack_log_path,
+    research_pack_panel_text,
+    research_pack_status_text,
+    suggested_delivery_dir,
+)
 from .scheduler import install, query, uninstall
 from .trusted_ai_brief import latest_ranking_path
 
@@ -284,6 +300,13 @@ class Workbench:
         self.visual_anchor_process: subprocess.Popen[Any] | None = None
         self.daily_material_pack_process: subprocess.Popen[Any] | None = None
         self.daily_material_exchange_process: subprocess.Popen[Any] | None = None
+        self.research_pack_process: subprocess.Popen[Any] | None = None
+        self.research_pack_log = research_pack_log_path(config)
+        self.research_pack_state = tk.StringVar(value=EMPTY_STATUS_TEXT)
+        #: 本次构建的目标期次；轮询与刷新只报这一期，避免把别期结果当成本次结果。
+        self.research_pack_episode_id: str | None = None
+        #: 「仍在后台运行」提示只允许弹一次，不得每秒重复弹窗。
+        self._research_pack_timeout_notified = False
         self.schedule_var = tk.BooleanVar(value=query(config)["ok"])
         self.summary = tk.StringVar(value="正在读取状态…")
         self.health = tk.StringVar(value="")
@@ -343,10 +366,19 @@ class Workbench:
         ttk.Button(exchange, text="打开交换包简报", command=self.open_daily_material_exchange_report).grid(row=0, column=2, padx=4)
         ttk.Button(exchange, text="打开交换区目录", command=self.open_daily_material_exchange_folder).grid(row=1, column=2, padx=4, pady=(6, 0))
         inspiration = ttk.LabelFrame(frame, text="随时找灵感", padding=14)
-        inspiration.pack(fill="x", pady=14)
+        inspiration.pack(fill="x", pady=(14, 0))
         ttk.Label(inspiration, text="最大参考视频数").grid(row=0, column=0, sticky="w")
         ttk.Spinbox(inspiration, from_=10, to=int(config["jobs"]["inspiration"]["hard_max_reference_videos"]), increment=10, textvariable=self.maximum, width=8).grid(row=0, column=1, padx=10)
         ttk.Button(inspiration, text="一键生成灵感", command=self.start_inspiration).grid(row=0, column=2, padx=10)
+        research_pack = ttk.LabelFrame(frame, text="单期研究包（供 Haike 只读消费）", padding=14)
+        research_pack.pack(fill="x", pady=(14, 0))
+        ttk.Label(research_pack, text=research_pack_panel_text(config), wraplength=680).grid(row=0, column=0, sticky="w")
+        ttk.Button(research_pack, text="从最近交付生成研究包", command=self.start_research_pack).grid(row=0, column=1, padx=8)
+        ttk.Button(research_pack, text="刷新状态", command=self.refresh_research_pack).grid(row=0, column=2, padx=4)
+        ttk.Button(research_pack, text="打开研究包目录", command=self.open_research_pack_folder).grid(row=1, column=1, padx=8, pady=(6, 0))
+        ttk.Button(research_pack, text="打开每期研究证据包.md", command=self.open_research_pack_evidence).grid(row=1, column=2, padx=4, pady=(6, 0))
+        ttk.Button(research_pack, text="打开消费端收编快照", command=self.open_research_pack_consumer).grid(row=1, column=0, sticky="w", pady=(6, 0))
+        ttk.Label(research_pack, textvariable=self.research_pack_state, justify="left", wraplength=680).grid(row=2, column=0, columnspan=3, sticky="w", pady=(8, 0))
         editorial = ttk.LabelFrame(frame, text="双轨科技选题编辑台", padding=10)
         editorial.pack(fill="both", expand=True, pady=(0, 14))
         self.editorial_tabs = ttk.Notebook(editorial)
@@ -565,6 +597,126 @@ class Workbench:
             return
         os.startfile(report.parent)  # type: ignore[attr-defined]
 
+    def start_research_pack(self) -> None:
+        if process_running(self.research_pack_process):
+            messagebox.showinfo("单期研究包", "研究包任务已经在运行，请勿重复点击。")
+            return
+        suggestion = suggested_delivery_dir(self.config)
+        folder = filedialog.askdirectory(
+            title="选择 material-replication 交付目录（含清单.json）",
+            initialdir=str(suggestion or resolve_path(".")),
+            parent=self.root,
+        )
+        if not folder:
+            return
+        # 本次目标期次：口径同 CLI 的 publish_from_delivery（读交付清单的
+        # business_date + theme 再走 default_episode_id）。清单读不到时退回
+        # 不过滤，保持旧行为。
+        self.research_pack_episode_id = delivery_episode_id(folder)
+        self._research_pack_timeout_notified = False
+        try:
+            self.research_pack_process = launch_episode_research_pack(self.config_path, folder, log_path=self.research_pack_log)
+        except (OSError, ValueError) as exc:
+            self.research_pack_process = None
+            messagebox.showerror("单期研究包", f"无法启动：{type(exc).__name__}\n请检查交付目录是否可读。")
+            return
+        messagebox.showinfo("单期研究包", research_pack_launch_text(self.config, self.research_pack_log))
+        self._poll_research_pack(600)
+
+    def _poll_research_pack(self, remaining: int) -> None:
+        process = self.research_pack_process
+        if process_running(process):
+            # 旧进程仍在运行就**保留句柄并继续每秒轮询**（上限之外 remaining 归零，
+            # 但句柄不释放）。理由：旧实现超时后把句柄置 None，start_research_pack
+            # 的 process_running 防抖随即失效，会允许第二个进程并发写同一个
+            # output/每期研究包 与 .staging/，互相破坏；保留句柄比「加长超时」
+            # 更可靠，因为构建耗时无法预估，任何固定上限都可能被超过。
+            if remaining <= 0 and not self._research_pack_timeout_notified:
+                self._research_pack_timeout_notified = True
+                self.refresh_research_pack()
+                messagebox.showinfo("单期研究包", "任务仍在后台运行，稍后点「刷新状态」查看结果。")
+            self.root.after(1000, lambda: self._poll_research_pack(max(0, remaining - 1)))
+            return
+        self.research_pack_process = None
+        exit_code = int(getattr(process, "returncode", 0) or 0)
+        if exit_code != 0:
+            failure = build_failure_text(self.research_pack_log, exit_code)
+            # 失败分支不走 refresh（那会用研究包状态覆盖失败原因），但仍标明本次
+            # 目标期次，使用者才能确认这条失败属于哪一期。
+            if self.research_pack_episode_id:
+                failure = f"{failure}\n本次目标期次：{self.research_pack_episode_id}"
+            self._set_research_pack_state(failure)
+            messagebox.showerror("研究包构建失败", failure[:1500])
+            return
+        self.refresh_research_pack(self.research_pack_episode_id)
+        messagebox.showinfo("单期研究包", f"任务已结束。\n{self.research_pack_state.get()}")
+
+    def _set_research_pack_state(self, text: str) -> None:
+        self.research_pack_state.set(f"{text}\n日志：{self.research_pack_log}")
+
+    def refresh_research_pack(self, episode_id: str | None = None) -> None:
+        """刷新状态文本。
+
+        手动点「刷新状态」时 ``episode_id`` 为空，显示最近一期（旧行为）；
+        轮询在本次构建结束后传本次目标期次，只报本次结果。
+        """
+        try:
+            status = research_pack_status_text(self.config, episode_id=episode_id)
+        except Exception:
+            status = EMPTY_STATUS_TEXT
+        self._set_research_pack_state(status)
+
+    def open_research_pack_folder(self) -> None:
+        found = latest_research_pack(self.config)
+        if not found:
+            messagebox.showinfo("单期研究包", "尚未发布研究包，没有可打开的目录。")
+            return
+        target = research_pack_folder_target(found)
+        try:
+            os.startfile(target)  # type: ignore[attr-defined]
+        except OSError as exc:
+            messagebox.showerror("单期研究包", f"无法打开目录：{type(exc).__name__}\n{target}")
+
+    def open_research_pack_evidence(self) -> None:
+        found = latest_research_pack(self.config)
+        if not found:
+            messagebox.showinfo("单期研究包", "尚未发布研究包，还没有每期研究证据包.md。")
+            return
+        path = research_pack_evidence_path(found)
+        if not path.is_file():
+            messagebox.showinfo("单期研究包", f"该研究包还没有每期研究证据包.md：\n{path}")
+            return
+        try:
+            os.startfile(path)  # type: ignore[attr-defined]
+        except OSError as exc:
+            messagebox.showerror("单期研究包", f"无法打开文件：{type(exc).__name__}\n{path}")
+
+    def open_research_pack_consumer(self) -> None:
+        """打开消费端的收编快照目录；未接收或未配置时只给中文说明，不打开别期次的目录。"""
+        root = consumer_snapshot_root(self.config)
+        if root is None:
+            messagebox.showinfo(
+                "单期研究包",
+                "未配置消费端仓库根目录（jobs.material_replication.episode_research_pack.consumer_root），"
+                "无法定位消费端收编快照。",
+            )
+            return
+        found = latest_research_pack(self.config)
+        pointer = (found or {}).get("pointer") or {}
+        status = research_pack_consumer_status(self.config, pointer)
+        if not status["found"] or not status["snapshot_dir"]:
+            messagebox.showinfo(
+                "单期研究包",
+                "消费端还没有这个包的收编快照（按 content_sha256 / 包 ID 匹配）。\n"
+                f"消费端快照根目录：{root}",
+            )
+            return
+        target = Path(status["snapshot_dir"])
+        try:
+            os.startfile(target)  # type: ignore[attr-defined]
+        except OSError as exc:
+            messagebox.showerror("单期研究包", f"无法打开目录：{type(exc).__name__}\n{target}")
+
     def open_visual_anchor_report(self) -> None:
         report = latest_visual_anchor_report(self.config)
         if not report:
@@ -777,6 +929,7 @@ class Workbench:
         schedule = "已启用" if query(self.config)["ok"] else "未启用"
         self.health.set(f"计划任务：{schedule}  ·  抖音浏览器：{browser_labels.get(browser['state'], browser['state'])}\n中转站：{'已配置' if llm['api_key_configured'] else '未配置'}  ·  新闻源：{len(self.config['jobs']['daily_news']['sources'])} 个\n临时目录：{temp_size(self.config) / 1024 / 1024:.1f} MiB")
         self._load_editorial_views()
+        self.refresh_research_pack()
 
     def open_latest(self) -> None:
         state = load_json(resolve_path(self.config["jobs"]["state_path"]), {"jobs": {}})

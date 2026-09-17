@@ -1,6 +1,6 @@
 # Project handoff router
 
-Current task: `docs/tasks/2026-09-14-multi-source-material-acquisition.md`.
+Current task: `docs/tasks/2026-09-16-episode-research-pack-v1.md`.
 
 Read order for a new task:
 

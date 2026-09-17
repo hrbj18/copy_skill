@@ -44,6 +44,15 @@
 - The zero-hit gate criterion is a hit-ratio threshold, not "zero hits". "Any hit suppresses the warning" reported a 25%-hit run as clean, so the rule is `hits / total >= min_hit_ratio`.
 - bilibili is a first-class discovery source (stdlib wbi search, no login): wbi keys are read from `/x/web-interface/nav` even at `code=-101`, requests carry the site `Referer`, and HTTP 412 is rate control (throttle + back off), not a missing header.
 
+## Cross-repo episode research pack
+
+- Producer only; Haike consumes read-only via `current.json`, never `.staging`.
+- `argument_graph` edge keys are exactly `{from, to, relation}` and frozen. A 2026-09-16 rename to
+  `from_claim_id`/`to_claim_id` was rejected and reverted: the task guide names `from`/`to`, both repos
+  already agreed, and the consumer rejects any other key set with `invalid_contract`. Do not rename again.
+- Seven semantic files enter `content_sha256`; `revision.json` and `run-report.json` do not.
+- `research_builder` defaults to `None`; unset paths stay unchanged.
+
 ## Windows launcher line endings and repo-root guard
 
 - The Windows batch entrypoints (`启动工作台.bat`, `科技内容情报工作台.cmd`, `scripts/launch_workbench.cmd`) MUST be checked out with CRLF. LF-only is a data-loss hazard, not a style choice: it makes `cmd.exe` mis-parse them and turns the trailing cleanup into `del /q ""` executed in the caller's cwd (see RUNTIME_SAFETY).

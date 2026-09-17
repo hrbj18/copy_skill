@@ -1,15 +1,19 @@
 # Current status
 
-Updated: 2026-09-15.
+Updated: 2026-09-16.
 
 ## Current task
 
-- `docs/tasks/2026-09-14-material-hit-rate-optimization.md`.
-- Hit-rate gates are **enabled in the shipped config**: `relevance_gate`
-  (`min_subject_hits=1`, `min_hit_ratio=0.05`), `visual_verify` (3-frame RapidOCR on file name + OCR
-  only, never the title; `conclusive=false` drops nothing), `material_replica.max_age_days=90`.
-- `theme_keywords` / `theme_subject_terms` per-theme overrides (`93c76da`) allow the generic queries
-  platform users actually type without silently widening the admission gate.
+- `docs/tasks/2026-09-16-episode-research-pack-v1.md` — this repo **produces** the cross-repo episode
+  research pack (frozen contract v2); Haike consumes it read-only.
+- Shipped config enables it (`jobs.material_replication.episode_research_pack`, `enabled=true`,
+  `annotate_delivery_manifest=false`). Workbench panel `单期研究包（供 Haike 只读消费）` builds from the
+  latest delivery; log `.tmp/workbench/research-pack-build.log`.
+- Live proof 2026-09-16: `9.16马斯克谈特斯拉合并复刻视频` -> `content_sha256=5c68f6dc…`, validation `pass`,
+  read-only intake by Haike `admitted`. Fixture revisions r1/r2 reproduce their frozen digests.
+- Hit-rate gates stay as shipped: `relevance_gate` (`min_subject_hits=1`, `min_hit_ratio=0.05`),
+  `visual_verify` (3-frame RapidOCR; `conclusive=false` drops nothing), `material_replica.max_age_days=90`,
+  plus per-theme `theme_keywords` / `theme_subject_terms` (`93c76da`).
 - Command: `material-replication run --theme <T> --pool-size <N> --business-date <YYYY-MM-DD>`.
 
 ## Reliable current capabilities
@@ -20,7 +24,6 @@ Updated: 2026-09-15.
 - Bounded public-web leads plus visual references for a user-selected script.
 - Themed replication publishing an atomic `MM.DD<主题>复刻视频/` folder.
 - Pluggable discovery: Douyin / yt-dlp / bilibili. `sources` stays off until multi-source dispatch lands.
-- Pre-download subject-term admission, plus per-theme keyword and subject-term overrides.
 
 ## Product limitations
 
@@ -48,7 +51,7 @@ Updated: 2026-09-15.
   -> `9a94ed4` -> `93c76da`.
 - Repo-root data loss: LF-only launchers deleted all 10 top-level tracked files three times; fixed and
   guarded in `0341c0e`/`aedcdad`/`47143aa` (RUNTIME_SAFETY).
-- Full suite 2026-09-15: 827 tests, 0 failures, no deselect.
+- Full suite 2026-09-16: 880 tests, 0 failures, no deselect.
 
 ## Next direction
 

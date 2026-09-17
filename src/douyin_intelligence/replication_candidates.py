@@ -538,6 +538,14 @@ def _collect_from_sources(
         "max_pool_size": max_pool,
         "candidates": merged,
         "media_urls": media_urls,
+        # The live adapters, keyed by source name, are handed back *in memory*
+        # only (never serialised) so the pipeline can build a
+        # ``CompositeMediaResolver`` for the download stage from exactly the
+        # adapters that ran collection -- in particular Douyin's adapter still
+        # holds the signed URLs it captured during search, and Bilibili's keeps
+        # its cached wbi key.  A caller that only reads the serialised keys is
+        # unaffected: ``adapters`` is not written to disk by anyone.
+        "adapters": adapters,
         "candidate_pool": {
             "schema_version": 1,
             "theme": theme,

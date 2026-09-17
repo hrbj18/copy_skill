@@ -222,6 +222,18 @@ def build_parser() -> argparse.ArgumentParser:
         help="下载前排除词：标题包含任一排除词即剔除（可重复，追加到 prefilter.exclude_terms）",
     )
     replication.add_argument("--folder", help="inspect 需要的交付目录")
+    research_pack = sub.add_parser(
+        "episode-research-pack", help="单主题研究包 episode-research-pack-v1：从旧交付发布或只读校验",
+    )
+    research_pack.add_argument("action", choices=("build", "inspect"))
+    research_pack.add_argument("--delivery-folder", help="build 需要的 material-replication 交付目录")
+    research_pack.add_argument("--theme", help="build 可选：主题（缺省取交付清单）")
+    research_pack.add_argument("--business-date", help="业务日期 YYYY-MM-DD")
+    research_pack.add_argument("--episode-id", help="可选：显式 episode_id")
+    research_pack.add_argument(
+        "--annotate-delivery", action="store_true",
+        help="显式人工选项：把 research_pack_ref 写回旧交付清单（自动流水线永不写旧交付）",
+    )
     sub.add_parser("workbench", help="打开轻量本地工作台")
     return parser
 
@@ -500,6 +512,35 @@ def main(argv: list[str] | None = None) -> int:
             )
             _print(result)
             return 0 if result["status"] in {"success", "partial"} else 3
+        if args.command == "episode-research-pack":
+            from .episode_research_pack import (
+                inspect_episode_pack,
+                publish_from_delivery,
+                research_pack_settings,
+            )
+            if args.action == "build":
+                if not args.delivery_folder:
+                    parser.error("episode-research-pack build 需要 --delivery-folder")
+                # Annotation writes into the finished legacy delivery, so it is a
+                # deliberate manual opt-in only: the flag, or the configured
+                # manual default.  The automatic pipeline path never annotates.
+                annotate = bool(args.annotate_delivery) or bool(
+                    research_pack_settings(config)["annotate_delivery_manifest"]
+                )
+                result = publish_from_delivery(
+                    config, delivery_dir=args.delivery_folder, theme=args.theme,
+                    business_date=args.business_date, episode_id=args.episode_id,
+                    annotate_delivery=annotate,
+                )
+                _print(result)
+                return 0 if result.get("status") in {"published", "reused", "noop"} else 3
+            if not args.business_date or not args.episode_id:
+                parser.error("episode-research-pack inspect 需要 --business-date 与 --episode-id")
+            result = inspect_episode_pack(
+                config, business_date=args.business_date, episode_id=args.episode_id,
+            )
+            _print(result)
+            return 0 if result.get("status") == "pass" else 3
         if args.command == "workbench":
             from .workbench_launcher import launch_workbench
             return launch_workbench(config, args.config)

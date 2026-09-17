@@ -761,6 +761,51 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
             raise ConfigurationError(
                 "素材复刻源级闸门 source_gate.on_zero_match 必须是 warn/skip_source/fail_source"
             )
+    # Per-source duration windows (optional, purely additive).  ``source_budgets``
+    # sizes *how many* candidates a source may contribute; this sizes *which
+    # durations* are acceptable **per source**, so a long-form platform (Bilibili's
+    # index is full of 20-minute videos) can be admitted without loosening the
+    # window Douyin's short clips are judged by.  A source present here uses its
+    # own window *instead of* the gate's default for that source; every other
+    # source -- and the whole run, when the key is absent -- keeps the original
+    # window byte for byte.  An absent or ``None`` section is a no-op: a config
+    # written before this feature loads exactly as before.
+    source_duration_windows = material_replication.get("source_duration_windows")
+    if source_duration_windows is not None:
+        if not isinstance(source_duration_windows, dict):
+            raise ConfigurationError(
+                "jobs.material_replication.source_duration_windows 必须是对象"
+            )
+        for source_name, window in source_duration_windows.items():
+            if not isinstance(window, dict):
+                raise ConfigurationError(
+                    f"素材复刻各源时长窗口 source_duration_windows.{source_name} 必须是对象"
+                )
+            try:
+                window_min = float(window.get("min_seconds") or 0)
+                window_max = float(window.get("max_seconds") or 0)
+            except (TypeError, ValueError):
+                raise ConfigurationError(
+                    f"素材复刻各源时长窗口 source_duration_windows.{source_name} 的 "
+                    "min_seconds/max_seconds 必须是数字"
+                )
+            if window_min < 0 or window_max < 0 or (window_max > 0 and window_min > window_max):
+                raise ConfigurationError(
+                    f"素材复刻各源时长窗口 source_duration_windows.{source_name} 时长区间无效"
+                )
+    # Single-topic research pack (optional, purely additive; ships ``enabled=false``).
+    # Absent or disabled -> no-op, so a config without the block loads exactly as
+    # before.  Only the shape is checked here, mirroring the loose style above.
+    research_pack = material_replication.get("episode_research_pack")
+    if research_pack is not None:
+        if not isinstance(research_pack, dict):
+            raise ConfigurationError("jobs.material_replication.episode_research_pack 必须是对象")
+        for key in ("enabled", "annotate_delivery_manifest"):
+            if key in research_pack and not isinstance(research_pack[key], bool):
+                raise ConfigurationError(f"素材复刻研究包 episode_research_pack.{key} 必须是布尔值")
+        value = Path(str(research_pack.get("output_root") or ""))
+        if research_pack.get("output_root") and (value.is_absolute() or ".." in value.parts):
+            raise ConfigurationError("jobs.material_replication.episode_research_pack.output_root 必须是项目内相对路径")
     workbench = payload.get("workbench")
     if not isinstance(workbench, dict):
         raise ConfigurationError("workbench 必须是对象")

@@ -206,7 +206,18 @@ def test_valid_sources_and_gate_pass(tmp_path: Path) -> None:
             }
         ),
     )
-    assert loaded["jobs"]["material_replication"]["sources"] == ["ytdlp"]
+    # The guarantee under test is that these valid values are *accepted*: a
+    # rejection in ``_load_with`` would have raised above and failed the call.
+    # ``sources`` ships enabled in production, so the opt-in seam
+    # (``_OPT_IN_MATERIAL_SWITCHES``) strips it from every *loaded* payload --
+    # assert its absence (a real, failable check on the seam) rather than reading
+    # the fixture file back, which ``load_config`` never rewrites and so could
+    # never fail.  The non-stripped keys must survive the load unchanged.
+    assert "sources" not in loaded["jobs"]["material_replication"]
+    assert loaded["jobs"]["material_replication"]["source_budgets"] == {"ytdlp": 30}
+    assert loaded["jobs"]["material_replication"]["source_gate"] == {
+        "enabled": True, "on_zero_match": "skip_source",
+    }
 
 
 def test_unknown_source_is_rejected(tmp_path: Path) -> None:

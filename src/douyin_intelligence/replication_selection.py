@@ -42,9 +42,11 @@ from .replication_validation import (
     validation_reason,
     validation_settings_snapshot,
 )
+from .sources.base import DownloadTarget, MediaResolutionError
 
 if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
     from .replication_pipeline import ReplicationDeps
+    from .sources.base import MediaResolver
 
 
 MEDIA_PROCESS_TIMEOUT_SECONDS = 180
@@ -68,6 +70,59 @@ def script_settings(config: dict[str, Any]) -> dict[str, Any]:
 
 def material_settings(config: dict[str, Any]) -> dict[str, Any]:
     return material_replication_settings(config).get("material_replica") or {}
+
+
+# --------------------------------------------------------------------------- #
+# Per-source duration windows (opt-in)
+#
+# One *global* duration window cannot serve both a short-clip platform (Douyin's
+# in-window clips) and a long-form one (Bilibili's 4~20-minute index): widening
+# the global window to admit Bilibili would silently degrade Douyin's selection
+# quality, and narrowing it starves Bilibili.  ``source_duration_windows``
+# therefore overrides the window *per source*: a listed source is judged by its
+# own window, every other source -- and the whole run, when the key is absent --
+# keeps the gate's original window byte for byte.
+# --------------------------------------------------------------------------- #
+def source_duration_windows(config: dict[str, Any]) -> dict[str, tuple[float, float]]:
+    """``jobs.material_replication.source_duration_windows`` as ``{source: (min, max)}``.
+
+    Absent/empty -> ``{}`` (no source is overridden, i.e. a strict no-op).  A
+    malformed entry is skipped rather than raised here -- ``config.load_config``
+    is the single place that rejects a bad window, so a hand-built test config
+    degrades gracefully instead of turning a download into a crash.
+    """
+    raw = material_replication_settings(config).get("source_duration_windows") or {}
+    if not isinstance(raw, dict):
+        return {}
+    windows: dict[str, tuple[float, float]] = {}
+    for name, window in raw.items():
+        if not isinstance(window, dict):
+            continue
+        try:
+            window_min = float(window.get("min_seconds") or 0)
+            window_max = float(window.get("max_seconds") or 0)
+        except (TypeError, ValueError):
+            continue
+        windows[str(name)] = (window_min, window_max)
+    return windows
+
+
+def effective_duration_window(
+    overrides: dict[str, tuple[float, float]],
+    candidate: Candidate,
+    default_min: float,
+    default_max: float,
+) -> tuple[float, float]:
+    """The ``(min, max)`` window to judge ``candidate`` against.
+
+    Returns the source's own window when the candidate's ``source`` is listed in
+    ``overrides``, otherwise the gate's ``default_min``/``default_max``
+    unchanged -- so the default path is the pre-feature window, byte for byte.
+    """
+    window = overrides.get(str(getattr(candidate, "source", "") or ""))
+    if window is None:
+        return default_min, default_max
+    return window
 
 
 # --------------------------------------------------------------------------- #
@@ -545,6 +600,10 @@ def prefilter_candidates(
     allow_unknown = bool(settings.get("allow_unknown_duration", True))
     drop_non_video = enabled and prefilter_drop_non_video(config)
     threshold = _prefilter_heat_threshold(candidates, percentile) if enabled else None
+    # Per-source windows are resolved once, up front: a listed source is judged by
+    # its own window *instead of* the shared one, so the global window is never
+    # loosened for everyone (see ``source_duration_windows``).
+    window_overrides = source_duration_windows(config)
 
     passed: list[Candidate] = []
     rejected: list[dict[str, Any]] = []
@@ -579,15 +638,21 @@ def prefilter_candidates(
                     )
                 )
                 continue
-        elif (min_seconds > 0 and duration < min_seconds) or (max_seconds > 0 and duration > max_seconds):
-            lower = f"{min_seconds:.0f}s" if min_seconds > 0 else "不限"
-            upper = f"{max_seconds:.0f}s" if max_seconds > 0 else "不限"
-            rejected.append(
-                _prefilter_reject(
-                    candidate, _PREFILTER_DURATION_STAGE, f"时长 {duration:.0f}s 不在 {lower}~{upper}"
-                )
+        else:
+            candidate_min, candidate_max = effective_duration_window(
+                window_overrides, candidate, min_seconds, max_seconds
             )
-            continue
+            if (candidate_min > 0 and duration < candidate_min) or (
+                candidate_max > 0 and duration > candidate_max
+            ):
+                lower = f"{candidate_min:.0f}s" if candidate_min > 0 else "不限"
+                upper = f"{candidate_max:.0f}s" if candidate_max > 0 else "不限"
+                rejected.append(
+                    _prefilter_reject(
+                        candidate, _PREFILTER_DURATION_STAGE, f"时长 {duration:.0f}s 不在 {lower}~{upper}"
+                    )
+                )
+                continue
         if threshold is not None and candidate.heat_score < threshold:
             rejected.append(
                 _prefilter_reject(
@@ -602,7 +667,11 @@ def prefilter_candidates(
 
 
 def measured_duration_window_reject(
-    measured: float, config: dict[str, Any], *, metadata_duration: float = 0.0
+    measured: float,
+    config: dict[str, Any],
+    *,
+    metadata_duration: float = 0.0,
+    source: str = "",
 ) -> tuple[bool, str]:
     """Post-download half of the "一个窗口、两处执行" duration gate.
 
@@ -617,6 +686,11 @@ def measured_duration_window_reject(
     Returns ``(reject, reason)``.  No-op when the prefilter is disabled, when the
     metadata already carried a duration (the pre-download gate already judged
     it), or when the window is open on both sides.
+
+    ``source`` names the candidate's origin so a per-source window
+    (``source_duration_windows``) is applied here exactly as it was at the
+    pre-download checkpoint; it defaults to ``""`` (no source -> the shared
+    window) so every existing caller keeps the original behaviour.
     """
     settings = prefilter_settings(config)
     if not bool(settings.get("enabled", False)):
@@ -625,6 +699,9 @@ def measured_duration_window_reject(
         return False, ""
     min_seconds = float(settings.get("min_seconds") or 0)
     max_seconds = float(settings.get("max_seconds") or 0)
+    window = source_duration_windows(config).get(str(source or ""))
+    if window is not None:
+        min_seconds, max_seconds = window
     if (min_seconds <= 0 and max_seconds <= 0) or measured <= 0:
         return False, ""
     if (min_seconds > 0 and measured < min_seconds) or (max_seconds > 0 and measured > max_seconds):
@@ -1085,24 +1162,68 @@ class DownloadBudget:
         }
 
 
-def invoke_downloader(downloader, url: str, path: Path, config: dict[str, Any], cap: int | None) -> None:
-    """Call ``downloader``, passing ``max_bytes`` only when it supports it.
+def invoke_downloader(
+    downloader,
+    url: str,
+    path: Path,
+    config: dict[str, Any],
+    cap: int | None,
+    referer: str | None = None,
+) -> None:
+    """Call ``downloader``, passing ``max_bytes``/``referer`` only when supported.
 
-    The real :func:`materials.download_video` enforces the cap in-flight; the
-    offline fakes across the test suite keep a 3-arg signature, so the kwarg is
-    only added when the callable actually declares it.
+    The real :func:`materials.download_video` enforces the cap in-flight and
+    accepts a ``referer`` override; the offline fakes across the test suite keep a
+    3-arg signature, so each kwarg is only added when the callable actually
+    declares it.  ``referer`` is the cross-platform hook: ``None`` (the default,
+    and everything the legacy Douyin path passes) makes the downloader fall back
+    to its historic ``https://www.douyin.com/`` header, byte for byte.
     """
-    if cap is None:
+    if cap is None and referer is None:
+        # Fast path: no optional kwarg requested -> never probe the signature, so
+        # a non-inspectable callable keeps its exact historical invocation.
         downloader(url, path, config)
         return
     try:
         parameters = inspect.signature(downloader).parameters
     except (TypeError, ValueError):
         parameters = None
-    if parameters is not None and "max_bytes" in parameters:
-        downloader(url, path, config, max_bytes=cap)
-    else:
-        downloader(url, path, config)
+    kwargs: dict[str, Any] = {}
+    if cap is not None and parameters is not None and "max_bytes" in parameters:
+        kwargs["max_bytes"] = cap
+    if referer is not None and parameters is not None and "referer" in parameters:
+        kwargs["referer"] = referer
+    downloader(url, path, config, **kwargs)
+
+
+def resolve_download_target(
+    resolver: "MediaResolver | None",
+    candidate: Candidate,
+    media_urls: dict[str, str],
+) -> "tuple[str, str | None] | None":
+    """Resolve ``candidate`` to ``(url, referer)`` for one download attempt.
+
+    Two contracts coexist here, and the split is deliberate:
+
+    * **Multi-source** (``resolver`` is not ``None``): the resolver dispatches to
+      the candidate's own adapter.  It returns ``None`` when the candidate has no
+      usable address -- a *normal* miss the caller records as one download failure
+      and moves on.  A :class:`~douyin_intelligence.sources.base.MediaResolutionError`
+      is a *source-level* failure and is **not** swallowed here: it propagates so
+      the caller can record it distinctly (never as "no address"), matching the
+      adapter contract.
+    * **Legacy** (``resolver`` is ``None``): the historic ``media_urls`` lookup,
+      returned verbatim -- including an empty string.  The pre-resolver chain
+      handed that empty string straight to the downloader (which then failed and
+      was counted as one download failure), so returning it unchanged is what
+      keeps the default Douyin path byte-for-byte equivalent.
+    """
+    if resolver is None:
+        return media_urls.get(candidate.video_id, ""), None
+    target = resolver.resolve_target(candidate)
+    if target is None:
+        return None
+    return target.url, target.referer
 
 
 def file_size(path: "Path | str") -> int:
@@ -1298,8 +1419,15 @@ def select_script_replica(
     budget: "DownloadBudget | None" = None,
     relevance: dict[str, float] | None = None,
     validation_store: list[dict[str, Any]] | None = None,
+    resolver: "MediaResolver | None" = None,
 ) -> dict[str, Any]:
     """Pick exactly one script replica, or report ``not_found`` with reasons.
+
+    ``resolver`` is the optional multi-source download dispatch (see
+    :class:`~douyin_intelligence.sources.base.CompositeMediaResolver`).  ``None``
+    -- the default -- keeps the legacy ``media_urls`` lookup and the historic
+    Douyin referer, byte for byte; a resolver resolves each candidate lazily
+    against its own source adapter at download time.
 
     Every rejected candidate is recorded as a structured
     ``{"video_id", "stage", "reason"}`` entry (``stage`` is one of ``pool``,
@@ -1352,6 +1480,8 @@ def select_script_replica(
     downloaded = 0
     min_seconds = float(script_settings(config).get("min_seconds") or 30)
     max_seconds = float(script_settings(config).get("max_seconds") or 300)
+    # Per-source window overrides, resolved once for the whole loop.
+    window_overrides = source_duration_windows(config)
     # Shared single video cache root (see ``REPLICATION_VIDEO_SUBDIR``): the
     # script replica and the material sources reuse the same ``<id>.mp4`` so a
     # video common to both stages is fetched once, not twice.
@@ -1368,10 +1498,39 @@ def select_script_replica(
                 break
         rel = (relevance or {}).get(candidate.video_id, 0.0)
         try:
+            resolved = resolve_download_target(resolver, candidate, media_urls)
+        except MediaResolutionError as exc:
+            # Source-level / transport failure (retries exhausted, API error,
+            # network): recorded apart from a normal "no address" miss so the
+            # operator can tell "the source broke" from "this clip had nothing".
+            errors.append({
+                "video_id": candidate.video_id,
+                "stage": "resolve",
+                "error": str(exc)[:300],
+            })
+            continue
+        except Exception as exc:  # an adapter blowing up must not abort the run
+            errors.append({
+                "video_id": candidate.video_id,
+                "stage": "resolve",
+                "error": f"{type(exc).__name__}: {str(exc)[:280]}",
+            })
+            continue
+        if resolved is None:
+            # No usable address (normal miss): one download failure, no alert and
+            # no retry -- the adapter contract's "return '' / None" half.
+            unmet.append({
+                "video_id": candidate.video_id,
+                "stage": "no_media_url",
+                "reason": "未解析到可用下载地址",
+            })
+            continue
+        download_url, download_referer = resolved
+        try:
             video_path = video_root / f"{candidate.video_id}.mp4"
             pre_size = file_size(video_path)
             try:
-                invoke_downloader(downloader, media_urls.get(candidate.video_id, ""), video_path, config, budget.item_cap() if budget is not None else None)
+                invoke_downloader(downloader, download_url, video_path, config, budget.item_cap() if budget is not None else None, download_referer)
             except MediaTooLargeError as exc:
                 if budget is None:
                     raise
@@ -1425,16 +1584,20 @@ def select_script_replica(
             window_reject, window_reason = measured_duration_window_reject(
                 float(probe.get("duration_seconds") or 0), config,
                 metadata_duration=float(getattr(candidate, "duration_seconds", 0.0) or 0.0),
+                source=str(getattr(candidate, "source", "") or ""),
             )
             if window_reject:
                 unmet.append({"video_id": candidate.video_id, "stage": "duration_post", "reason": window_reason})
                 continue
             duration = float(probe.get("duration_seconds") or 0)
-            if not min_seconds <= duration <= max_seconds:
+            script_min, script_max = effective_duration_window(
+                window_overrides, candidate, min_seconds, max_seconds
+            )
+            if not script_min <= duration <= script_max:
                 unmet.append({
                     "video_id": candidate.video_id,
                     "stage": "duration",
-                    "reason": f"时长 {duration:.0f}s 不在 {min_seconds:.0f}~{max_seconds:.0f}s",
+                    "reason": f"时长 {duration:.0f}s 不在 {script_min:.0f}~{script_max:.0f}s",
                 })
                 continue
             # P1c: ``select`` sits *after* the duration gate so a file rejected on
@@ -1531,6 +1694,7 @@ def select_material_replicas(
     relevance: dict[str, float] | None = None,
     validation_store: list[dict[str, Any]] | None = None,
     theme: str | None = None,
+    resolver: "MediaResolver | None" = None,
 ) -> dict[str, Any]:
     """Select 2~4 low-speech, face-acceptable, deduplicated material videos.
 
@@ -1596,6 +1760,14 @@ def select_material_replicas(
     "inactive:no_subject_terms"`` (``"active"`` when it did bite).  With the key
     absent -- every config written before this feature -- nothing changes: the
     gate is off and the chain is byte-for-byte the pre-gate one.
+
+    ``resolver`` is the optional multi-source download dispatch: when given, the
+    download URL and the ``Referer`` header are resolved per candidate through the
+    candidate's own source adapter (so a Bilibili clip is fetched with Bilibili's
+    referer); ``None`` -- the default -- keeps the legacy ``media_urls`` lookup and
+    the historic Douyin referer, byte for byte.  A ``MediaResolutionError`` is a
+    source-level failure and is recorded separately from a normal "no address"
+    miss.
     """
     from .replication_theme import project_path
 
@@ -1609,6 +1781,8 @@ def select_material_replicas(
     target = int(material.get("target_count") or 4)
     min_seconds = float(material.get("min_seconds") or 15)
     max_seconds = float(material.get("max_seconds") or 180)
+    # Per-source window overrides (e.g. Bilibili's long-form clips), resolved once.
+    window_overrides = source_duration_windows(config)
     max_speech = float(material.get("max_speech_rate") or 1.2)
     max_per_author = int(material.get("max_per_author") or 1)
     # --- Delivered-bytes quota (optional; absent keys == byte-identical run) ---
@@ -1838,15 +2012,18 @@ def select_material_replicas(
         duration_source = str(getattr(candidate, "duration_source", "") or "")
         if metadata_duration > 0 and duration_source:
             tolerance = float(validation_settings_snapshot(config)["duration_tolerance"])
-            below_window = min_seconds > 0 and metadata_duration < min_seconds * (1.0 - tolerance)
-            above_window = max_seconds > 0 and metadata_duration > max_seconds * (1.0 + tolerance)
+            material_min, material_max = effective_duration_window(
+                window_overrides, candidate, min_seconds, max_seconds
+            )
+            below_window = material_min > 0 and metadata_duration < material_min * (1.0 - tolerance)
+            above_window = material_max > 0 and metadata_duration > material_max * (1.0 + tolerance)
             if below_window or above_window:
                 unmet.append({
                     "video_id": candidate.video_id,
                     "stage": "duration_pre",
                     "reason": (
                         f"元数据时长 {metadata_duration:.0f}s 不在素材窗口 "
-                        f"{min_seconds:.0f}~{max_seconds:.0f}s（下载前判定，未消耗流量）"
+                        f"{material_min:.0f}~{material_max:.0f}s（下载前判定，未消耗流量）"
                     ),
                     "duration_source": duration_source,
                 })
@@ -1858,10 +2035,39 @@ def select_material_replicas(
                 break
         rel = (relevance or {}).get(candidate.video_id, 0.0)
         try:
+            resolved = resolve_download_target(resolver, candidate, media_urls)
+        except MediaResolutionError as exc:
+            # Source-level / transport failure (retries exhausted, API error,
+            # network): recorded apart from a normal "no address" miss so the
+            # operator can tell "the source broke" from "this clip had nothing".
+            errors.append({
+                "video_id": candidate.video_id,
+                "stage": "resolve",
+                "error": str(exc)[:300],
+            })
+            continue
+        except Exception as exc:  # an adapter blowing up must not abort the run
+            errors.append({
+                "video_id": candidate.video_id,
+                "stage": "resolve",
+                "error": f"{type(exc).__name__}: {str(exc)[:280]}",
+            })
+            continue
+        if resolved is None:
+            # No usable address (normal miss): one download failure, no alert and
+            # no retry -- the adapter contract's "return '' / None" half.
+            unmet.append({
+                "video_id": candidate.video_id,
+                "stage": "no_media_url",
+                "reason": "未解析到可用下载地址",
+            })
+            continue
+        download_url, download_referer = resolved
+        try:
             video_path = video_root / f"{candidate.video_id}.mp4"
             pre_size = file_size(video_path)
             try:
-                invoke_downloader(downloader, media_urls.get(candidate.video_id, ""), video_path, config, budget.item_cap() if budget is not None else None)
+                invoke_downloader(downloader, download_url, video_path, config, budget.item_cap() if budget is not None else None, download_referer)
             except MediaTooLargeError as exc:
                 if budget is None:
                     raise
@@ -1922,18 +2128,22 @@ def select_material_replicas(
             window_reject, window_reason = measured_duration_window_reject(
                 float(probe.get("duration_seconds") or 0), config,
                 metadata_duration=float(getattr(candidate, "duration_seconds", 0.0) or 0.0),
+                source=str(getattr(candidate, "source", "") or ""),
             )
             if window_reject:
                 rejected_duration_post += 1
                 unmet.append({"video_id": candidate.video_id, "stage": "duration_post", "reason": window_reason})
                 continue
             duration = float(probe.get("duration_seconds") or 0)
-            if not min_seconds <= duration <= max_seconds:
+            material_min, material_max = effective_duration_window(
+                window_overrides, candidate, min_seconds, max_seconds
+            )
+            if not material_min <= duration <= material_max:
                 rejected_duration += 1
                 unmet.append({
                     "video_id": candidate.video_id,
                     "stage": "duration",
-                    "reason": f"时长 {duration:.0f}s 不在 {min_seconds:.0f}~{max_seconds:.0f}s",
+                    "reason": f"时长 {duration:.0f}s 不在 {material_min:.0f}~{material_max:.0f}s",
                 })
                 continue
             # P1c: only a candidate that cleared both duration gates may hold a

@@ -554,7 +554,8 @@
         "荣耀Magic9超能版": ["荣耀 Magic9", "荣耀 超能版", "荣耀 11000mAh", "荣耀 Magic9 电池", "荣耀 青海湖电池", "荣耀 Magic9 发布", "荣耀 新机", "荣耀 Magic9 参数"],
         "众擎 URKL 格斗联赛": ["众擎 URKL", "人形机器人格斗联赛", "机器人格斗大赛", "众擎 T800", "URKL 机器人格斗", "机器人格斗", "人形机器人 对打"],
         "智谱 335亿融资": ["智谱 融资", "智谱 GLM", "智谱 完全自训练", "国产大模型 融资", "智谱 上市", "智谱清言", "大模型 RSI"],
-        "追觅 MOVA AstraX 机械臂割草机": ["追觅 MOVA AstraX", "MOVA AstraX", "机械臂割草机", "MOVA 割草机器人", "追觅 割草机", "追觅IFA2026"]
+        "追觅 MOVA AstraX 机械臂割草机": ["追觅 MOVA AstraX", "MOVA AstraX", "机械臂割草机", "MOVA 割草机器人", "追觅 割草机", "追觅IFA2026"],
+        "平陆运河": ["平陆运河 通航", "平陆运河 首航", "平陆运河 开通", "平陆运河 马道枢纽", "平陆运河 货船", "平陆运河 船闸", "平陆运河 航拍", "平陆运河 现场"]
       },
       "_theme_subject_terms_comment": "与 theme_keywords 配对的【主体闸门】补充词表（2026-09-15 新增）。刻意独立成键、而不是复用 theme_keywords：放宽搜索词 与 放宽准入 是两个独立决定。9.14 实测里一个裸类目词（「扫地机」）就能放行竞品视频，因为 min_subject_hits=1 只要求命中【某一个】主体词 ⇒ 加类目词是一种必须显式点名的放宽；若复用关键词表，一次搜索侧改动会静默改变闸门接受范围。本表用语是【追加】到 head 派生词表之后，绝不替换，故召回单调不减。同样支持原样主题或 base 作键；缺省时 subject_terms 与改动前逐字节相同。",
       "theme_subject_terms": {
@@ -573,9 +574,16 @@
         "马斯克谈特斯拉合并": ["合并", "All-In", "峰会", "访谈", "采访", "Roadster", "Terafab"],
         "理想i9": ["发布会", "上市", "实测", "试驾", "体验", "评测", "开箱"],
         "努比亚豆包手机": ["发布会", "开售", "实测", "上手", "体验", "开箱", "评测"],
-        "荣耀Magic9超能版": ["发布会", "实测", "上手", "体验", "开箱", "评测", "电池"]
+        "荣耀Magic9超能版": ["发布会", "实测", "上手", "体验", "开箱", "评测", "电池"],
+        "平陆运河": ["通航", "首航", "开通", "通水", "试航", "过闸", "船闸", "闸门", "航拍", "现场", "仪式"]
       },
       "max_path_chars": 260,
+      "sources": ["bilibili"],
+      "_sources_comment": "素材源清单（2026-09-17 启用）。本机抖音登录态因企业认证更换主体处于迁移中，搜索接口返回空 data，抖音素材链暂不可用 ⇒ 让 B站顶上来当素材源。缺省时抖音路径与改动前逐字节等价（含 Referer 头 https://www.douyin.com/）；tests/conftest.py 的 opt-in seam 会把它从测试夹具里剥掉，故生产开启不会污染任何未显式声明的用例。",
+      "source_duration_windows": {
+        "bilibili": {"min_seconds": 10, "max_seconds": 1200}
+      },
+      "_source_duration_windows_comment": "按源的时长窗口（2026-09-17 新增）。B站实测 11 条候选里 8 条 > 300s（268s~12194s），会被 prefilter.max_seconds=300 与 material_replica.max_seconds=300 在下载前剔成全灭；但【绝不可】全局放宽 prefilter.max_seconds——那会同时改变抖音路径的选材品质（抖音短片本在窗内，是 B站长片超窗）。正解是按源分档：此处列出的源用自己的窗口，其余源（含抖音）与整轮缺省时一律沿用各闸门原窗口，逐字节等价。B站窗口 min_seconds=10 / max_seconds=1200 覆盖实测主力 268~1048s；12194s / 2998s 两条超 download_budget.max_item_bytes=80 MiB，会在下载时被正常拒绝（期望行为）。缺该键 = 不改任何闸门。",
       "budget": {
         "collection_seconds": 480,
         "collection_hard_seconds": 720,
@@ -698,6 +706,13 @@
           "prototxt": "",
           "weights": ""
         }
+      },
+      "_episode_research_pack_comment": "单主题研究包 episode-research-pack-v1（2026-09-16 新增）。enabled=true 时，material-replication 完成旧交付后额外发布独立、不可变、可校验的研究包到 output/每期研究包/<日期>_研究包/<episode_id>/，供 Haike 只读消费；enabled=false 时输出与改动前逐字节相同，旧交付语义不变；当前置为 true（生产上线口径，测试由 tests/conftest.py 强制回 false）。annotate_delivery_manifest=true 时才在新交付的 清单.json 追加可选 research_pack_ref（默认走 sidecar 05-过程数据/research_pack_ref.json，历史交付永不回写）。consumer_root 是消费端（Haike）仓库根目录，仅供工作台只读 <consumer_root>/.backlot/research_pack_intake.json 与 research-pack-snapshots 来显示「消费端有没有接收这个包」；留空则面板明说未配置，生产端不 import 消费端代码、不跑消费端 CLI。",
+      "episode_research_pack": {
+        "enabled": true,
+        "output_root": "output/每期研究包",
+        "annotate_delivery_manifest": false,
+        "consumer_root": "D:/刘宇钊/codex_work/Haike_video"
       }
     }
   },

@@ -50,6 +50,7 @@ _GUARDED_MODULE_PREFIXES = ("test_replication_", "test_face_metrics")
 # test_replication_selection.py / test_replication_cli.py).
 _OPT_IN_MATERIAL_SWITCHES = (
     "relevance_gate", "visual_verify", "dedup_across_runs", "theme_event_terms", "direct_delivery",
+    "sources", "source_duration_windows",
 )
 
 # Same contract, one level deeper: switches that live under
@@ -58,6 +59,14 @@ _OPT_IN_MATERIAL_SWITCHES = (
 # changes nothing" guard cases vacuous -- they must build their window from
 # scratch, so the seam clears it here.
 _OPT_IN_MATERIAL_REPLICA_SWITCHES = ("max_age_days",)
+
+# Nested opt-in blocks under ``jobs.material_replication.*`` that ship enabled in
+# production.  ``episode_research_pack`` publishes an extra, independent pack on
+# every material-replication run; that must stay a no-op for a test that never
+# asked for it, so the seam forces the block's ``enabled`` back to False while
+# leaving its other keys (``output_root`` / ``annotate_delivery_manifest``) alone.
+# A test that exercises the feature sets ``enabled: true`` itself.
+_OPT_IN_NESTED_MATERIAL_BLOCKS = ("episode_research_pack",)
 
 
 def _strip_opt_in_material_switches(payload: dict) -> dict:
@@ -70,6 +79,10 @@ def _strip_opt_in_material_switches(payload: dict) -> dict:
         if isinstance(replica, dict):
             for key in _OPT_IN_MATERIAL_REPLICA_SWITCHES:
                 replica.pop(key, None)
+        for name in _OPT_IN_NESTED_MATERIAL_BLOCKS:
+            block = material.get(name)
+            if isinstance(block, dict):
+                block["enabled"] = False
     return payload
 
 # Repository root: the directory that contains ``tests/``.

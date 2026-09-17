@@ -19,7 +19,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
 
 from .exporter import atomic_write_json
@@ -61,6 +61,7 @@ from .replication_selection import (
     prefilter_settings,
     ranked_candidates,
     relevance_report,
+    resolve_download_target,
     select_material_replicas,
     select_script_replica,
     validate_probe,
@@ -81,6 +82,7 @@ from .replication_validation import (
     write_validation_artifact,
 )
 from .replication_visual import verify_videos, visual_verify_settings
+from .sources.base import CompositeMediaResolver, MediaResolutionError
 
 
 _FACE_RANK = {FACE_FREE: 0, "low_face": 1, "face_heavy": 2, FACE_UNAVAILABLE: 3}
@@ -352,6 +354,7 @@ def run_material_replication(
     exclude_terms: list[str] | None = None,
     deps: "ReplicationDeps | None" = None,
     clock: Callable[[], float] = time.monotonic,
+    research_builder: Callable[..., Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Run the full material-replication workflow for one theme.
 
@@ -362,6 +365,11 @@ def run_material_replication(
 
     ``exclude_terms`` are extra pre-download exclude terms (from the repeatable
     ``--exclude-term`` CLI flag) appended to the config's own list.
+
+    ``research_builder`` is forwarded to the research-pack publisher (see
+    :func:`~douyin_intelligence.episode_research_pack.publish_episode_research_pack`).
+    ``None`` -- the default -- keeps the pack derived from the finished legacy
+    delivery, byte-for-byte identical to the pre-change behaviour.
     """
     config = _config_with_extra_excludes(config, exclude_terms)
     settings = material_replication_settings(config)
@@ -394,6 +402,17 @@ def run_material_replication(
     # separately in the ``prefilter`` block so the two can never be conflated.
     collected_candidate_count = len(candidates)
     media_urls: dict[str, str] = pool["media_urls"]
+    # Multi-source download dispatch.  When ``jobs.material_replication.sources``
+    # is configured, ``collect_candidate_pool`` hands back the live adapters it
+    # created (in memory only); wrapping them lets the download stage resolve each
+    # candidate lazily through *its own* source (URL + Referer) instead of the
+    # single Douyin-only ``media_urls`` map.  Absent that key -- the legacy path --
+    # no resolver is built and every download call below keeps the historic
+    # ``media_urls`` lookup and Douyin referer, byte for byte.
+    source_adapters = pool.get("adapters") or {}
+    media_resolver: CompositeMediaResolver | None = (
+        CompositeMediaResolver(source_adapters) if source_adapters else None
+    )
     # ``keywords_used`` == what the crawler actually searched; ``keywords_requested``
     # == the full expansion.  Keeping them apart stops the delivery from claiming
     # coverage the crawler's ``budget // 10`` truncation never provided.
@@ -711,22 +730,51 @@ def run_material_replication(
                     "video_id": candidate.video_id, "stage": "not_video", "reason": not_video_reason,
                 })
                 continue
-            media_url = media_urls.get(candidate.video_id, "")
-            if not media_url:
-                download_failures.append({
-                    "video_id": candidate.video_id, "stage": "no_media_url", "reason": "缺少下载地址",
-                })
-                continue
+            if media_resolver is None:
+                # Legacy Douyin path: a pure in-memory lookup, done *before* the
+                # budget check exactly as before.
+                media_url = media_urls.get(candidate.video_id, "")
+                if not media_url:
+                    download_failures.append({
+                        "video_id": candidate.video_id, "stage": "no_media_url", "reason": "缺少下载地址",
+                    })
+                    continue
+                media_referer: str | None = None
             if budget is not None:
                 allowed, budget_reason = budget.allow()
                 if not allowed:
                     budget.skip(candidate, "budget", budget_reason, relevance=relevance.get(candidate.video_id, 0.0))
                     break
             rel = relevance.get(candidate.video_id, 0.0)
+            if media_resolver is not None:
+                # Multi-source: resolve lazily *after* the budget judgment, so a
+                # candidate the budget already refused never pays for a network
+                # resolve (Bilibili's is ~4 s).  ``None`` = no usable address
+                # (recorded as a plain download failure); a ``MediaResolutionError``
+                # is a source-level failure and gets its own stage.
+                try:
+                    resolved = resolve_download_target(media_resolver, candidate, media_urls)
+                except MediaResolutionError as exc:
+                    download_failures.append({
+                        "video_id": candidate.video_id, "stage": "resolve", "reason": str(exc)[:160],
+                    })
+                    continue
+                except Exception as exc:  # an adapter blowing up must not abort the run
+                    download_failures.append({
+                        "video_id": candidate.video_id, "stage": "resolve",
+                        "reason": f"{type(exc).__name__}: {str(exc)[:140]}",
+                    })
+                    continue
+                if resolved is None or not resolved[0]:
+                    download_failures.append({
+                        "video_id": candidate.video_id, "stage": "no_media_url", "reason": "缺少下载地址",
+                    })
+                    continue
+                media_url, media_referer = resolved
             video_path = video_root / f"{candidate.video_id}.mp4"
             pre_size = file_size(video_path)
             try:
-                invoke_downloader(downloader, media_url, video_path, config, budget.item_cap() if budget is not None else None)
+                invoke_downloader(downloader, media_url, video_path, config, budget.item_cap() if budget is not None else None, media_referer)
             except Exception as exc:
                 if budget is not None and isinstance(exc, MediaTooLargeError):
                     # Charge any bytes a *streamed* oversize already read off the
@@ -785,6 +833,7 @@ def run_material_replication(
             window_reject, window_reason = measured_duration_window_reject(
                 float(probe.get("duration_seconds") or 0), config,
                 metadata_duration=float(getattr(candidate, "duration_seconds", 0.0) or 0.0),
+                source=str(getattr(candidate, "source", "") or ""),
             )
             if window_reject:
                 duration_window_rejected += 1
@@ -903,6 +952,10 @@ def run_material_replication(
             download_run_log["validation"] = {"counts": validation_block["counts"]}
         atomic_write_json(process_dir / "run_log.json", download_run_log)
         _publish(stage, destination, overwrite)
+        research_pack = _maybe_publish_research_pack(
+            config, destination=destination, theme=theme, business_date=business_date, warnings=warnings,
+            research_builder=research_builder,
+        )
         if downloads and not download_failures:
             status = "success"
         elif downloads:
@@ -915,6 +968,7 @@ def run_material_replication(
             "manifest_path": str((destination / MANIFEST_NAME).resolve()),
             "counts": counters, "downloads": downloads, "failures": download_failures,
             "degraded": False, "insufficient": False, "warnings": warnings, "dry_run": False,
+            **({"episode_research_pack": research_pack} if research_pack is not None else {}),
         }
 
     # --- Runtime probes (no download) ------------------------------------
@@ -937,6 +991,7 @@ def run_material_replication(
     script_result = select_script_replica(
         config, candidates, media_urls=media_urls, deps=deps, clock=active_clock,
         budget=budget, relevance=relevance, validation_store=validation_store,
+        resolver=media_resolver,
     )
     if _phase_expired(script_start, float(phase_budget.get("asr_seconds") or 180) + float(phase_budget.get("download_seconds") or 480), active_clock):
         warnings.append("脚本复刻视频选择超出软预算")
@@ -966,7 +1021,7 @@ def run_material_replication(
     material_result = select_material_replicas(
         config, candidates, media_urls=media_urls, deps=deps, clock=active_clock,
         budget=budget, relevance=relevance, validation_store=validation_store,
-        theme=theme,
+        theme=theme, resolver=media_resolver,
     )
     selected: list[dict[str, Any]] = material_result["selected"]
     insufficient = bool(material_result["insufficient"])
@@ -1464,6 +1519,10 @@ def run_material_replication(
         full_run_log["validation"] = {"counts": validation_block["counts"]}
     atomic_write_json(process_dir / "run_log.json", full_run_log)
     _publish(stage, destination, overwrite)
+    research_pack = _maybe_publish_research_pack(
+        config, destination=destination, theme=theme, business_date=business_date, warnings=warnings,
+        research_builder=research_builder,
+    )
 
     if not candidates:
         status = "failed"
@@ -1482,6 +1541,7 @@ def run_material_replication(
         "insufficient": insufficient,
         "warnings": manifest["warnings"],
         "dry_run": False,
+        **({"episode_research_pack": research_pack} if research_pack is not None else {}),
     }
 
 
@@ -1497,6 +1557,49 @@ def _publish(stage: Path, destination: Path, overwrite: bool) -> None:
         remove_tree(stage)
         raise FileExistsError(f"交付目录已存在，使用 --overwrite 覆盖：{destination}")
     publish_directory(stage, destination)
+
+
+def _maybe_publish_research_pack(
+    config: dict[str, Any],
+    *,
+    destination: Path,
+    theme: str,
+    business_date: str,
+    warnings: list[str],
+    research_builder: Callable[..., Mapping[str, Any]] | None = None,
+) -> dict[str, Any] | None:
+    """Publish the independent research pack after the *legacy* delivery landed.
+
+    The legacy delivery is already published (and immutable) at this point, so a
+    research-pack failure must never be reported as a legacy failure: it is
+    surfaced as an explicit ``episode_research_pack`` error block plus a warning.
+
+    The **automatic** path never annotates the legacy delivery: it always passes
+    ``annotate_delivery=False``, so a pipeline run can never rewrite a finished
+    ``清单.json`` (annotation is a deliberate, manual, CLI-only opt-in).  A
+    disabled switch keeps the whole call a no-op, so a run without opt-in is
+    byte-for-byte identical to the pre-change behaviour.
+
+    ``research_builder`` (default ``None``) is threaded to
+    :func:`~douyin_intelligence.episode_research_pack.publish_from_delivery`; with
+    the default the published semantic is still the one derived from the delivery.
+    """
+    from .episode_research_pack import publish_from_delivery, research_pack_settings
+
+    settings = research_pack_settings(config)
+    if not settings["enabled"]:
+        return None
+    try:
+        result = publish_from_delivery(
+            config, delivery_dir=destination, theme=theme, business_date=business_date,
+            annotate_delivery=False, research_builder=research_builder,
+        )
+    except Exception as exc:  # noqa: BLE001 - never mask the legacy delivery result
+        warnings.append(f"研究包发布失败（旧交付不受影响）：{type(exc).__name__}: {exc}")
+        return {"status": "error", "error": f"{type(exc).__name__}: {exc}"}
+    for item in result.get("warnings") or []:
+        warnings.append(str(item))
+    return result
 
 
 def inspect_material_replication(config: dict[str, Any], folder: str | Path) -> dict[str, Any]:

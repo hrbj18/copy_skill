@@ -17,6 +17,7 @@ from douyin_intelligence.replication_selection import (
     sort_candidates,
     validate_probe,
 )
+from douyin_intelligence.sources.base import DownloadTarget, MediaResolutionError
 
 
 def _candidate(video_id: str, *, digg: int, author: str, duration: float, heat: float | None = None) -> Candidate:
@@ -351,19 +352,21 @@ def test_test_config_strips_the_shipped_opt_in_switches() -> None:
     keys may be missing: the rest of the blocks must still be the shipped ones,
     so this also catches a seam that strips too much.
 
-    Keep ``registered`` / ``nested_registered`` in sync with
-    ``tests/conftest.py::_OPT_IN_MATERIAL_SWITCHES`` and
-    ``_OPT_IN_MATERIAL_REPLICA_SWITCHES`` (``tests`` is not a package, so the
-    tuples cannot be imported).  Note this test deliberately does *not* assert
-    what production enables -- it only asserts that whatever production ships,
-    the seam removes the registered keys.
+    Keep ``registered`` / ``nested_registered`` / ``nested_blocks`` in sync with
+    ``tests/conftest.py::_OPT_IN_MATERIAL_SWITCHES``,
+    ``_OPT_IN_MATERIAL_REPLICA_SWITCHES`` and ``_OPT_IN_NESTED_MATERIAL_BLOCKS``
+    (``tests`` is not a package, so the tuples cannot be imported).  Note this
+    test deliberately does *not* assert what production enables -- it only
+    asserts that whatever production ships, the seam removes the registered keys.
     """
     from douyin_intelligence import config as config_module
 
     registered = (
         "relevance_gate", "visual_verify", "dedup_across_runs", "theme_event_terms", "direct_delivery",
+        "sources", "source_duration_windows",
     )
     nested_registered = ("max_age_days",)
+    nested_blocks = ("episode_research_pack",)
 
     shipped = json.loads(
         (config_module.project_root() / "config" / "content_intelligence.json").read_text(
@@ -374,18 +377,23 @@ def test_test_config_strips_the_shipped_opt_in_switches() -> None:
     # The seam must actually have work to do, or the test is vacuous.
     assert set(registered) & set(shipped_mr)
     assert set(nested_registered) & set(shipped_mr["material_replica"])
+    assert all(shipped_mr[name].get("enabled") is True for name in nested_blocks)
 
     test_mr = load_config()["jobs"]["material_replication"]
     for key in registered:
         assert key not in test_mr
     for key in nested_registered:
         assert key not in test_mr["material_replica"]
+    for name in nested_blocks:
+        assert test_mr[name]["enabled"] is False
 
     expected = json.loads(json.dumps(shipped_mr))
     for key in registered:
         expected.pop(key, None)
     for key in nested_registered:
         expected["material_replica"].pop(key, None)
+    for name in nested_blocks:
+        expected[name]["enabled"] = False
     assert test_mr == expected
 
 
@@ -611,3 +619,130 @@ def test_select_material_replicas_skips_non_video_before_download(tmp_path: Path
     assert result["counters"]["rejected_not_video"] == 1
     # The image album must never be downloaded.
     assert "album-1" not in downloaded
+
+
+# --------------------------------------------------------------------------- #
+# Download dispatch: the injected multi-source resolver (``resolver=``)
+#
+# The legacy path (``resolver=None``) is exercised by every test above.  These
+# pin the new path: a candidate is resolved through its *own* source adapter and
+# the downloader receives that source's Referer; a miss is a plain "no address"
+# and a source-level failure is recorded on its own ``resolve`` stage.
+# --------------------------------------------------------------------------- #
+class _StubMediaResolver:
+    """A :class:`~douyin_intelligence.sources.base.MediaResolver` double."""
+
+    def __init__(self, target: DownloadTarget | None = None, *, raises: Exception | None = None) -> None:
+        self._target = target
+        self._raises = raises
+        self.calls: list[str] = []
+
+    def resolve_target(self, candidate: Candidate) -> DownloadTarget | None:
+        self.calls.append(candidate.video_id)
+        if self._raises is not None:
+            raise self._raises
+        return self._target
+
+
+def _capturing_deps(captured: list[dict]) -> types.SimpleNamespace:
+    """``_material_deps`` variant whose downloader records url + referer."""
+
+    def downloader(url, dest, cfg, *, max_bytes=None, referer=None):
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_bytes(b"x")
+        captured.append({"url": url, "referer": referer})
+
+    return types.SimpleNamespace(
+        downloader=downloader,
+        prober=lambda path, cfg: {"duration_seconds": 60.0, "width": 1080, "height": 1920},
+        ocr=_FakeRunner({"items": [], "sampled_frames": 10}),
+        face_detector=_FreeFace(),
+        transcriber=_FakeRunner({"status": "no_speech", "text": "", "segments": []}),
+    )
+
+
+def _bilibili_candidate(video_id: str = "bv-1") -> Candidate:
+    candidate = _candidate(video_id, digg=100, author="A", duration=60, heat=1.0)
+    candidate.source = "bilibili"
+    return candidate
+
+
+def test_select_material_replicas_downloads_via_the_injected_resolver(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_selection.compute_visual_metrics",
+        lambda *args, **kwargs: VisualMetrics(sampled_frames=10, motion_frame_ratio=0.8, ocr_text_frame_ratio=0.1, visual_ok=True),
+    )
+    candidate = _bilibili_candidate()
+    captured: list[dict] = []
+    resolver = _StubMediaResolver(
+        DownloadTarget(url="https://cdn.example/bv", referer="https://www.bilibili.com/"),
+    )
+
+    select_material_replicas(config, [candidate], deps=_capturing_deps(captured), resolver=resolver)
+
+    # The candidate was resolved through the resolver (not the legacy map), and
+    # the downloader received the source's own Referer.
+    assert resolver.calls == ["bv-1"]
+    assert captured and captured[0]["url"] == "https://cdn.example/bv"
+    assert captured[0]["referer"] == "https://www.bilibili.com/"
+
+
+def test_select_material_replicas_resolver_miss_is_a_plain_no_media_url(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_selection.compute_visual_metrics",
+        lambda *args, **kwargs: VisualMetrics(sampled_frames=10, motion_frame_ratio=0.8, ocr_text_frame_ratio=0.1, visual_ok=True),
+    )
+    captured: list[dict] = []
+    result = select_material_replicas(
+        config, [_bilibili_candidate()], deps=_capturing_deps(captured),
+        resolver=_StubMediaResolver(None),  # no usable address
+    )
+
+    assert captured == []  # never reached the downloader
+    assert any(item["stage"] == "no_media_url" for item in result["unmet"])
+    assert not any(item["stage"] == "resolve" for item in result["errors"])
+
+
+def test_select_material_replicas_source_failure_has_its_own_stage(tmp_path: Path, monkeypatch) -> None:
+    config = _config(tmp_path)
+    monkeypatch.setattr(
+        "douyin_intelligence.replication_selection.compute_visual_metrics",
+        lambda *args, **kwargs: VisualMetrics(sampled_frames=10, motion_frame_ratio=0.8, ocr_text_frame_ratio=0.1, visual_ok=True),
+    )
+    captured: list[dict] = []
+    result = select_material_replicas(
+        config, [_bilibili_candidate()], deps=_capturing_deps(captured),
+        resolver=_StubMediaResolver(raises=MediaResolutionError("b站接口 503")),
+    )
+
+    assert captured == []
+    assert any(item["stage"] == "resolve" for item in result["errors"])
+    # A source-level failure must NOT be flattened into a "no address" miss.
+    assert not any(item["stage"] == "no_media_url" for item in result["unmet"])
+
+
+def test_select_script_replica_downloads_via_the_injected_resolver(tmp_path: Path) -> None:
+    config = _config(tmp_path)
+    captured: list[dict] = []
+
+    def downloader(url, dest, cfg, *, max_bytes=None, referer=None):
+        Path(dest).parent.mkdir(parents=True, exist_ok=True)
+        Path(dest).write_bytes(b"x")
+        captured.append({"url": url, "referer": referer})
+
+    deps = types.SimpleNamespace(
+        downloader=downloader,
+        prober=lambda path, cfg: {"duration_seconds": 60.0, "width": 1080, "height": 1920},
+        transcriber=_FakeRunner({"status": "success", "text": "字" * 200, "segments": []}),
+    )
+    resolver = _StubMediaResolver(
+        DownloadTarget(url="https://cdn.example/bv", referer="https://www.bilibili.com/"),
+    )
+
+    result = select_script_replica(config, [_bilibili_candidate()], deps=deps, resolver=resolver)
+
+    assert result["status"] == "found"
+    assert resolver.calls == ["bv-1"]
+    assert captured and captured[0]["referer"] == "https://www.bilibili.com/"
