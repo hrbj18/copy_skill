@@ -154,6 +154,17 @@ def _source_bytes(output_dir: Path) -> int:
     return sum(path.stat().st_size for path in (output_dir / SOURCE_DIR).glob("*") if path.is_file())
 
 
+def _delivery_folder_bytes(output_dir: Path) -> int:
+    """Every file in the delivery directory (02/03 + 04-原片 + 05 + 清单 + readme).
+
+    The user's spec is on the delivery directory **as a whole** (70~150 MB); the
+    old ``_source_bytes`` (04-原片 only) is blind to 02/03, which is how a doubled
+    delivery slipped past this very test.  This is the measure the new pipeline
+    gate records, so the acceptance line is asserted against it.
+    """
+    return sum(path.stat().st_size for path in Path(output_dir).rglob("*") if path.is_file())
+
+
 def _budget_block(output_dir: Path) -> dict:
     return json.loads((output_dir / PROCESS_DIR / "download_budget.json").read_text(encoding="utf-8"))
 
@@ -471,7 +482,14 @@ def test_h4_mixed_cache_and_download_both_gates_hold(tmp_path: Path, monkeypatch
 # H6 — the user's hard acceptance line, end to end at the REAL thresholds
 # =========================================================================== #
 def test_h6_delivered_bytes_stay_within_real_thresholds(tmp_path: Path) -> None:
-    """Real limits (<=12 items / <=150 MiB / <=30 MiB each); measure 04-原片."""
+    """Real limits (<=12 items / <=150 MiB / <=30 MiB each); measure 04-原片.
+
+    The *download budget* contract is asserted on ``04-原片`` (that is the ledger's
+    unit).  The **user's** line -- the delivery directory as a whole (70~150 MB) --
+    is a *different* number and is what the old 04-only measure could not see; it
+    is asserted below against the on-disk folder, so this test now closes the
+    blind spot that let a doubled delivery pass.
+    """
     limit_count, limit_bytes, limit_item = 12, 157286400, 31457280
     config = _config(tmp_path, budget={"enabled": True, "max_count": limit_count, "max_bytes": limit_bytes, "max_item_bytes": limit_item})
     # 6 candidates each exactly at the per-item cap: 5 fit (== limit_bytes), the 6th is refused.
@@ -483,15 +501,23 @@ def test_h6_delivered_bytes_stay_within_real_thresholds(tmp_path: Path) -> None:
     result = run_material_replication(config, "苹果折叠屏手机", business_date="2026-09-12", download_only=True, deps=deps)
     output_dir = Path(result["output_dir"])
     block = _budget_block(output_dir)
+    manifest = json.loads((output_dir / MANIFEST).read_text(encoding="utf-8"))
 
     delivered = _source_bytes(output_dir)
-    # The single hard metric the user cares about, measured on disk (not self-reported).
+    # The download budget's on-disk contract, measured on 04-原片.
     assert delivered <= limit_bytes, delivered
     assert len(result["downloads"]) <= limit_count
     # Self-report must agree with reality: used.bytes == ledger == delivered bytes.
     assert block["used"]["bytes"] == sum(item["size_bytes"] for item in result["downloads"]) == delivered
     assert block["stopped_by"] == "bytes"
     assert len(result["downloads"]) == 5 and delivered == limit_bytes
+
+    # The *user's* spec: the delivery directory total.  The pipeline records it,
+    # and it must equal the folder on disk (publish is a rename -> bytes preserved)
+    # and be strictly larger than 04-原片 alone (02/03/05/清单 are now counted).
+    folder_bytes = _delivery_folder_bytes(output_dir)
+    assert manifest["delivery_folder"]["delivery_folder_bytes"] == folder_bytes
+    assert folder_bytes >= delivered
 
     # The report must explain *why* these were worth downloading (user requirement).
     readme = (output_dir / "00-交付说明.md").read_text(encoding="utf-8")

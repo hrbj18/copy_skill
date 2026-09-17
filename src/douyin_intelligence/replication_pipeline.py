@@ -38,8 +38,13 @@ from .replication_delivery import (
     FOLDER_SOURCE,
     FOLDER_SUPPORT,
     MANIFEST_NAME,
+    MAX_DELIVERY_FOLDER_BYTES,
+    SOURCE_INDEX_NAME,
+    SOURCE_INDEX_README,
     build_manifest,
+    delivery_folder_bytes,
     ensure_delivery_tree,
+    human_size,
     publish_directory,
     render_delivery_readme,
     validate_delivery_manifest,
@@ -172,6 +177,72 @@ def _source_copy_name(candidate: Candidate) -> str:
     author = sanitize_theme(candidate.author, max_length=20) or "作者"
     title = sanitize_theme(candidate.title, max_length=20) or "作品"
     return f"{author}_{title}_{candidate.video_id}.mp4"
+
+
+def _source_index_cell(text: Any, limit: int = 40) -> str:
+    """One clean, single-line Markdown-table cell (fold whitespace, escape ``|``).
+
+    Source titles are free-form and routinely contain newlines and pipes; either
+    would split a table row, so every run of whitespace is folded to a single
+    space *before* truncation (mirroring ``_clip_title``) and ``|`` is replaced
+    with a full-width bar that cannot be read as a column separator.
+    """
+    collapsed = " ".join(str(text or "").split())
+    if len(collapsed) > limit:
+        collapsed = f"{collapsed[:limit]}…"
+    return collapsed.replace("|", "／")
+
+
+def _write_source_index(source_dir: Path, records: list[dict[str, Any]]) -> None:
+    """Write the ``04-原片`` index (machine-readable JSON + human Markdown).
+
+    Direct mode ships each selected source into 02/03 as a whole file, so
+    ``04-原片`` carries this index instead of a byte-identical second copy.  Every
+    row names the exact ``delivered_as`` file in 02/03, so the index is a complete
+    map from each source to where its video actually lives -- no reader has to
+    guess whether a missing ``.mp4`` means "not delivered" or "shipped elsewhere".
+    """
+    payload = {
+        "schema_version": 1,
+        "note": (
+            "直投模式下 02/03 已逐字节交付整片源片，04-原片 不再重复收录视频；"
+            "本索引列出每条入选源片及其交付位置。"
+        ),
+        "count": len(records),
+        "records": records,
+    }
+    atomic_write_json(source_dir / SOURCE_INDEX_NAME, payload)
+    lines = [
+        "# 原片索引",
+        "",
+        f"> {payload['note']}",
+        "",
+        "| video_id | 作者 | 标题 | 交付位置 | 大小 |",
+        "| --- | --- | --- | --- | --- |",
+    ]
+    for record in records:
+        lines.append(
+            f"| {_source_index_cell(record.get('video_id'))} "
+            f"| {_source_index_cell(record.get('author'))} "
+            f"| {_source_index_cell(record.get('title'))} "
+            f"| {record.get('delivered_as')} "
+            f"| {human_size(record.get('size_bytes') or 0)} |"
+        )
+    _atomic_text(source_dir / SOURCE_INDEX_README, "\n".join(lines) + "\n")
+
+
+#: Stable prefix for the whole-folder over-limit warning.  Used both to build the
+#: line and to recognise/replace a previous one on a re-measure, so the warning is
+#: never duplicated.
+_OVER_LIMIT_PREFIX = "交付目录合计超限："
+
+
+def _over_limit_warning(total: int) -> str:
+    """One-line, actionable over-limit warning that carries the measured value."""
+    return (
+        f"{_OVER_LIMIT_PREFIX}{human_size(total)}（{total} 字节）"
+        f" > 上限 {human_size(MAX_DELIVERY_FOLDER_BYTES)}（{MAX_DELIVERY_FOLDER_BYTES} 字节）"
+    )
 
 
 def _visual_verify_payload(
@@ -923,8 +994,10 @@ def run_material_replication(
         manifest["download_failures"] = download_failures
         manifest["source_retention"] = {
             "keep_source_video": keep_source,
+            "effective_keep": bool(keep_source),
             "kept_count": kept_sources,
             "note": "04-原片 收录本次交付的下载原片" if keep_source else "retention.keep_source_video=false：04-原片 不收录原片",
+            "reason": "04-原片 收录本次交付的下载原片" if keep_source else "retention.keep_source_video=false：04-原片 不收录原片",
             "persistent_store": str(settings.get("media_root") or "data/media/material-replication"),
         }
         manifest["material_replica"] = {
@@ -938,7 +1011,6 @@ def run_material_replication(
         if download_budget_block is not None:
             atomic_write_json(process_dir / "download_budget.json", {"schema_version": 1, **download_budget_block})
         write_validation_artifact(process_dir, config, validation_store)
-        _write_manifest(stage, manifest)
         download_run_log = {
             "status": "done", "mode": "download_only", "dry_run": False,
             "keywords": keywords_used, "keywords_requested": keywords_requested,
@@ -951,6 +1023,12 @@ def run_material_replication(
         if validation_block is not None:
             download_run_log["validation"] = {"counts": validation_block["counts"]}
         atomic_write_json(process_dir / "run_log.json", download_run_log)
+        # Whole-folder size gate, run LAST so ``run_log.json`` is counted too (see
+        # the full-chain path for the full rationale): the user's spec is on the
+        # delivery directory as a whole, so a 04-原片-only or 02/03-only count would
+        # be blind to the rest of the folder.
+        _apply_delivery_folder_size_gate(stage, manifest)
+        warnings = list(manifest["warnings"])
         _publish(stage, destination, overwrite)
         research_pack = _maybe_publish_research_pack(
             config, destination=destination, theme=theme, business_date=business_date, warnings=warnings,
@@ -967,7 +1045,7 @@ def run_material_replication(
             "output_dir": str(destination.resolve()),
             "manifest_path": str((destination / MANIFEST_NAME).resolve()),
             "counts": counters, "downloads": downloads, "failures": download_failures,
-            "degraded": False, "insufficient": False, "warnings": warnings, "dry_run": False,
+            "degraded": bool(manifest["degraded"]), "insufficient": False, "warnings": warnings, "dry_run": False,
             **({"episode_research_pack": research_pack} if research_pack is not None else {}),
         }
 
@@ -1145,6 +1223,10 @@ def run_material_replication(
     main_materials: list[dict[str, Any]] = []
     supporting_materials: list[dict[str, Any]] = []
     material_sources: list[dict[str, Any]] = []
+    # Direct mode replaces the 04-原片 *video* copy with an index (see the loop
+    # below); records are collected here and written once, after the whole loop,
+    # so a crash part-way through records nothing.
+    source_index_records: list[dict[str, Any]] = []
     # Cross-run de-duplication bookkeeping: filled as each candidate is actually
     # delivered (see ``remember_delivered`` after the loop), never before a file
     # has landed.
@@ -1174,7 +1256,15 @@ def run_material_replication(
         target_folder = FOLDER_MAIN if is_main else FOLDER_SUPPORT
 
         source_rel = ""
-        if keep_source:
+        # ``keep_source_video`` copies every selected source into 04-原片 -- but in
+        # the opt-in ``direct_delivery`` mode the *same* file is already shipped
+        # byte-for-byte into 02/03, so a second copy in 04 would double the
+        # delivery's bytes for zero new information.  That duplication is the root
+        # cause of the delivery directory blowing past the 150 MiB spec, so direct
+        # mode skips this copy and writes an index instead (below and after the
+        # loop).  The slicing path is untouched: there 04-原片 holds the real
+        # source, not a fragment, so it is not redundant.
+        if keep_source and not direct_mode:
             source_name = _source_copy_name(candidate)
             try:
                 shutil.copy2(item["video_path"], source_dir / source_name)
@@ -1242,14 +1332,32 @@ def run_material_replication(
             # still recorded on the row, so a reader can always see what shipped.
             direct_clip_id = f"{'main' if is_main else 'support'}-{seq:02d}"
             file_name = f"{prefix}.mp4"
+            delivered_rel = f"{target_folder}/{file_name}"
             try:
                 shutil.copy2(item["video_path"], target_dir / file_name)
             except OSError as exc:
                 warnings.append(f"{candidate.video_id} 原片直投失败：{exc}")
                 degraded = True
                 continue
+            if direct_mode and keep_source:
+                # 04-原片 no longer holds a byte-identical second copy, so the
+                # side-car must not point at a ``.mp4`` that is not there: point it
+                # at the index entry that *is* there, and record the exact file the
+                # source was delivered as, so the index is a complete provenance map.
+                source_rel = f"{FOLDER_SOURCE}/{SOURCE_INDEX_NAME}#{candidate.video_id}"
+                source_index_records.append({
+                    "video_id": candidate.video_id,
+                    "author": candidate.author,
+                    "title": candidate.title,
+                    "source_url": candidate.source_url,
+                    "play_count": candidate.play_count,
+                    "heat_score": round(float(candidate.heat_score), 6),
+                    "duration_seconds": round(duration, 3),
+                    "size_bytes": file_size(item["video_path"]),
+                    "delivered_as": delivered_rel,
+                })
             metadata = build_clip_metadata(
-                clip_id=direct_clip_id, role=role, file_name=f"{target_folder}/{file_name}",
+                clip_id=direct_clip_id, role=role, file_name=delivered_rel,
                 source={
                     "video_id": candidate.video_id,
                     "author": candidate.author,
@@ -1257,6 +1365,7 @@ def run_material_replication(
                     "play_count": candidate.play_count,
                     "heat_score": candidate.heat_score,
                     "folder": source_rel,
+                    "delivered_as": delivered_rel,
                 },
                 timecode={"start": 0.0, "end": duration, "duration": duration},
                 media=media_block, face=face_block, suggested_use=suggested_use, warnings=[],
@@ -1318,6 +1427,13 @@ def run_material_replication(
             }
             (main_materials if is_main else supporting_materials).append(record)
             clips_exported += 1
+
+    # Direct mode writes the 04-原片 *index* here, once, after every source file has
+    # actually landed in 02/03: an index entry is only honest if its ``delivered_as``
+    # target exists, so nothing may be recorded before the copy succeeded.  The
+    # slicing path leaves this empty and 04-原片 keeps its historical videos.
+    if direct_mode and keep_source:
+        _write_source_index(source_dir, source_index_records)
 
     # Cross-run de-duplication is written back only now, once every source file
     # has been copied: a crash part-way through the loop must not mark clips that
@@ -1451,15 +1567,31 @@ def run_material_replication(
     # switch: 04-原片 receives one copy of every *selected* material source (never
     # the non-selected downloads, which stay in the persistent media store).  This
     # block makes that retention rule explicit in the delivery instead of implicit.
+    #
+    # ``keep_source_video`` (the *configured* switch) and ``effective_keep`` (did a
+    # *video* actually land in 04-原片 this run) are different facts in direct mode:
+    # opting into whole-file delivery ships each source in 02/03 as a whole file
+    # and replaces the 04-原片 copy with an index, so the switch is ``true`` while
+    # ``kept_count`` is ``0``.  Both are reported so neither can be misread.
+    effective_keep = bool(keep_source and not direct_mode)
+    if direct_mode and keep_source:
+        retention_note = "直投模式：02/03 已逐字节交付整片源片，04-原片 改为原片索引，不再重复收录视频"
+        retention_reason = "02/03 已逐字节交付整片源片，04-原片 改为索引以避免交付目录体积翻倍"
+    elif keep_source:
+        retention_note = (
+            "04-原片 仅收录最终选用素材源片（每个最终选用源 1 份）；未选用的下载原片保留在持久化媒体库，不进入交付目录"
+        )
+        retention_reason = "04-原片 收录最终选用素材源片（每个最终选用源 1 份）"
+    else:
+        retention_note = "retention.keep_source_video=false：04-原片 不收录原片"
+        retention_reason = "retention.keep_source_video=false：04-原片 不收录原片"
     manifest["source_retention"] = {
         "keep_source_video": keep_source,
+        "effective_keep": effective_keep,
         "kept_count": kept_sources,
         "selected_count": len(material_sources),
-        "note": (
-            "04-原片 仅收录最终选用素材源片（每个最终选用源 1 份）；未选用的下载原片保留在持久化媒体库，不进入交付目录"
-            if keep_source
-            else "retention.keep_source_video=false：04-原片 不收录原片"
-        ),
+        "note": retention_note,
+        "reason": retention_reason,
         "persistent_store": str(settings.get("media_root") or "data/media/material-replication"),
     }
     if visual_payload is not None:
@@ -1518,6 +1650,21 @@ def run_material_replication(
     if validation_block is not None:
         full_run_log["validation"] = {"counts": validation_block["counts"]}
     atomic_write_json(process_dir / "run_log.json", full_run_log)
+
+    # The user's hard spec is a *delivery folder* totalling 70~150 MB.  Measure the
+    # whole folder (02/03 + 04-原片 + 05-过程数据 + 清单.json + 00-交付说明.md) and degrade
+    # when it exceeds the ceiling, so a size regression is caught by the run itself
+    # instead of shipping silently.  ``delivered_bytes`` only counts 02/03, so it is
+    # blind to 04-原片 -- exactly the blind spot that let a doubled folder pass.  Run
+    # LAST so ``run_log.json`` is on disk and counted; if the gate flips ``degraded``
+    # we sync run_log and re-measure, keeping the recorded byte count exact.
+    delivery_folder_total = _apply_delivery_folder_size_gate(stage, manifest)
+    if bool(manifest["degraded"]) != bool(full_run_log["degraded"]):
+        full_run_log["degraded"] = bool(manifest["degraded"])
+        atomic_write_json(process_dir / "run_log.json", full_run_log)
+        delivery_folder_total = _apply_delivery_folder_size_gate(stage, manifest)
+    if delivery_folder_total > MAX_DELIVERY_FOLDER_BYTES:
+        degraded = True
     _publish(stage, destination, overwrite)
     research_pack = _maybe_publish_research_pack(
         config, destination=destination, theme=theme, business_date=business_date, warnings=warnings,
@@ -1550,6 +1697,55 @@ def _write_manifest(stage: Path, manifest: dict[str, Any]) -> Path:
     atomic_write_json(path, manifest)
     _atomic_text(stage / DELIVERY_README, render_delivery_readme(manifest))
     return path
+
+
+def _apply_delivery_folder_size_gate(stage: Path, manifest: dict[str, Any]) -> int:
+    """Record the whole delivery folder's byte size and flag a spec breach.
+
+    The user's ceiling is on the **delivery directory as a whole** (70~150 MB), so
+    ``material_replica.delivered_bytes`` (02/03 only) and any ``04-原片``-only count
+    are each blind to the other half of the folder -- which is exactly how a
+    doubled delivery slipped past every gate.  This sums *every* file under
+    ``stage`` (00-交付说明.md / 01 / 02 / 03 / 04 / 05 / 清单.json), records it under
+    ``manifest["delivery_folder"]``, and sets ``manifest["degraded"]`` plus a
+    warning when the total exceeds :data:`MAX_DELIVERY_FOLDER_BYTES`.
+
+    ``清单.json``, ``00-交付说明.md`` and the warning text are all themselves part
+    of the folder *and* depend on the recorded number, so a single read would be
+    off by the manifest/readme's own size.  The measurement is therefore run to a
+    fixed point (a couple of iterations): once the value's decimal width stops
+    changing, the recorded number equals the on-disk folder size exactly.  Callers
+    must invoke this *after* every artifact that should count is on disk.  Returns
+    the measured total.
+
+    The recorded block deliberately carries **no absolute path**: the delivery
+    folder's name is already the manifest's top-level ``folder``, and embedding a
+    machine-specific path would make two otherwise-identical runs' manifests differ
+    (breaking the "off == no-op" comparisons) and leak the local layout.
+    """
+    manifest["delivery_folder"] = {
+        "delivery_folder_bytes": 0,
+        "max_delivery_folder_bytes": MAX_DELIVERY_FOLDER_BYTES,
+    }
+    _write_manifest(stage, manifest)
+    total = delivery_folder_bytes(stage)
+    for _ in range(6):
+        over = total > MAX_DELIVERY_FOLDER_BYTES
+        if over:
+            manifest["degraded"] = True
+        # Regenerate (never duplicate) the over-limit warning so repeated calls -
+        # e.g. a re-measure after run_log's ``degraded`` flag is synced - leave a
+        # single, current line rather than a growing list.
+        manifest["warnings"] = [w for w in manifest["warnings"] if not str(w).startswith(_OVER_LIMIT_PREFIX)]
+        if over:
+            manifest["warnings"] = [*manifest["warnings"], _over_limit_warning(total)]
+        manifest["delivery_folder"]["delivery_folder_bytes"] = int(total)
+        _write_manifest(stage, manifest)
+        measured = delivery_folder_bytes(stage)
+        if measured == total:
+            break
+        total = measured
+    return total
 
 
 def _publish(stage: Path, destination: Path, overwrite: bool) -> None:

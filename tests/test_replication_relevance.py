@@ -480,6 +480,13 @@ def test_disabled_prefilter_without_exclude_terms_is_a_field_for_field_noop(tmp_
         assert "下载前预筛" not in (out / "00-交付说明.md").read_text(encoding="utf-8")
 
     man_absent.pop("generated_at"), man_disabled.pop("generated_at")
+    # ``delivery_folder`` is a *physical* measurement of the delivery directory
+    # (every byte under it, including ``05-过程数据/run_log.json`` whose absolute
+    # paths differ between the ``absent`` and ``disabled`` tmp dirs).  It is a
+    # pipeline-wide derived size, not a field this no-op contract governs, so strip
+    # it for the same reason ``media_path`` is stripped: the two runs are otherwise
+    # field-for-field identical.
+    man_absent.pop("delivery_folder", None), man_disabled.pop("delivery_folder", None)
     assert man_absent == man_disabled
 
 

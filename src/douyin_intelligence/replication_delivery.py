@@ -27,6 +27,21 @@ FOLDER_SOURCE = "04-原片"
 FOLDER_PROCESS = "05-过程数据"
 DELIVERY_README = "00-交付说明.md"
 
+# ``direct_delivery`` (opt-in) ships each selected source as a whole file into
+# 02/03, so a *second* copy of the same file in 04-原片 would double the delivery's
+# bytes for zero new information.  In that mode 04-原片 carries these two index
+# files instead of the videos (machine-readable + human-readable), and every
+# side-car's ``source.folder`` points at the index entry rather than a ``.mp4``
+# that is not there.
+SOURCE_INDEX_NAME = "原片索引.json"
+SOURCE_INDEX_README = "原片索引.md"
+
+# The user's stated ceiling for a delivery directory is 70~150 MB.  The gate in
+# ``replication_pipeline`` fails a run whose *whole* delivery folder exceeds this,
+# so a duplication regression (or any other size blow-up) becomes visible in the
+# run itself instead of silently shipping an over-size folder.
+MAX_DELIVERY_FOLDER_BYTES = 157286400  # 150 MiB
+
 DISCLAIMER = "抖音素材仅为发现与关注度证据，不得作为事实依据；人脸指标为自动检测结果，交付前需人工复核。"
 
 REQUIRED_MANIFEST_KEYS = (
@@ -45,6 +60,28 @@ def ensure_delivery_tree(root: Path) -> None:
     root = Path(root)
     for name in (FOLDER_SCRIPT, FOLDER_MAIN, FOLDER_SUPPORT, FOLDER_SOURCE, FOLDER_PROCESS):
         (root / name).mkdir(parents=True, exist_ok=True)
+
+
+def delivery_folder_bytes(root: Path) -> int:
+    """Total size in bytes of every *file* under a delivery directory.
+
+    The user's spec is on the delivery directory **as a whole** (70~150 MB), not
+    on any single sub-folder: measuring only ``02/03`` misses ``04-原片`` and
+    measuring only ``04-原片`` misses ``02/03``.  Summing them all (recursively)
+    keeps the number faithful to what a shell ``du -sb`` or Explorer reports, so
+    it can be compared against the ceiling directly.  An unreadable entry is
+    skipped rather than aborting the count: a transient Windows lock must not
+    turn a size report into a crash.
+    """
+    total = 0
+    for path in Path(root).rglob("*"):
+        if not path.is_file():
+            continue
+        try:
+            total += path.stat().st_size
+        except OSError:
+            continue
+    return total
 
 
 def build_manifest(
@@ -643,20 +680,57 @@ def source_retention_lines(manifest: dict[str, Any]) -> list[str]:
     holds one copy of every *selected* source and **not** the non-selected
     downloads (which stay in the persistent media store); making that explicit
     stops the rule from being misread as data loss.
+
+    Beyond the configured ``keep_source_video`` switch it prints
+    ``effective_keep`` -- whether a *video* actually landed in ``04-原片`` this
+    run.  The two differ in the opt-in whole-file mode (``direct_delivery``):
+    each source is shipped as a whole file into 02/03 and the ``04-原片`` copy is
+    replaced by an index, so the switch reads ``True`` while nothing is copied.
+    Printing only the configured switch there would misread as a second copy (or
+    as silent data loss).
     """
     block = manifest.get("source_retention")
     if not block:
         return []
     keep = bool(block.get("keep_source_video", True))
+    effective = bool(block.get("effective_keep", keep))
     lines = [
         "## 原片保留",
         "",
         f"- retention.keep_source_video：{keep}",
+        f"- 实际收录原片视频：{effective}",
         f"- 04-原片 收录 {block.get('kept_count', 0)} 份；"
         f"持久化媒体库：{block.get('persistent_store')}",
         f"- 说明：{block.get('note') or '04-原片 仅收录最终选用源片'}",
     ]
+    reason = block.get("reason")
+    if reason:
+        lines.append(f"- 原因：{reason}")
     return lines
+
+
+def delivery_folder_lines(manifest: dict[str, Any]) -> list[str]:
+    """``## 交付体积`` section: the *whole* delivery folder against the ceiling.
+
+    Returns an empty list when the manifest carries no ``delivery_folder`` block
+    (older deliveries), so the readme is unchanged there.  This is the number
+    that answers the user's "70~150 MB" requirement: it counts **every** file in
+    the delivery directory (00-交付说明.md / 01 / 02 / 03 / 04 / 05 / 清单.json), not
+    a single sub-folder, so it can never appear healthy while the folder as a
+    whole is over the limit.
+    """
+    block = manifest.get("delivery_folder")
+    if not block:
+        return []
+    total = block.get("delivery_folder_bytes")
+    if not isinstance(total, (int, float)):
+        return []
+    ceiling = block.get("max_delivery_folder_bytes")
+    text = f"- 交付目录合计：{human_size(total)}"
+    if isinstance(ceiling, (int, float)) and ceiling > 0:
+        text += f"（上限 {human_size(ceiling)}）"
+        text += "；已超限" if total > ceiling else "；未超限"
+    return ["## 交付体积", "", text]
 
 
 def visual_proxy_lines(manifest: dict[str, Any]) -> list[str]:
@@ -817,6 +891,9 @@ def render_delivery_readme(manifest: dict[str, Any]) -> str:
     source_section = source_retention_lines(manifest)
     if source_section:
         lines.extend(["", *source_section])
+    delivery_section = delivery_folder_lines(manifest)
+    if delivery_section:
+        lines.extend(["", *delivery_section])
     face_section = face_truncation_lines(manifest)
     if face_section:
         lines.extend(["", *face_section])

@@ -498,6 +498,14 @@ def test_v7_budget_layer_is_additive_only(tmp_path: Path) -> None:
     for key, value in without.items():
         if key == "downloads":
             continue
+        # ``delivery_folder`` records the *physical* byte size of the whole delivery
+        # directory (measured over every file, including the manifest and the
+        # budget block itself), so enabling the budget legitimately changes it even
+        # when behaviour is otherwise identical.  It is a derived size measurement,
+        # not a budget-layer config field, so it is excluded from this
+        # additive-only field check (the size gate has its own dedicated tests).
+        if key == "delivery_folder":
+            continue
         assert with_budget[key] == value, f"budget changed existing key {key!r}"
     # A download record may only gain the additive ``relevance_score`` field.
     assert len(without["downloads"]) == len(with_budget["downloads"])

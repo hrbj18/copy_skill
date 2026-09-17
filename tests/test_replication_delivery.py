@@ -430,14 +430,17 @@ def test_download_only_without_failures_does_not_point_at_absent_section() -> No
 def test_readme_states_source_retention_rule() -> None:
     manifest = _manifest(source_retention={
         "keep_source_video": True,
+        "effective_keep": True,
         "kept_count": 2,
         "selected_count": 4,
         "note": "04-原片 仅收录最终选用素材源片（每个最终选用源 1 份）；未选用的下载原片保留在持久化媒体库，不进入交付目录",
+        "reason": "04-原片 收录最终选用素材源片（每个最终选用源 1 份）",
         "persistent_store": "data/media/material-replication",
     })
     text = render_delivery_readme(manifest)
     assert "## 原片保留" in text
     assert "retention.keep_source_video：True" in text
+    assert "实际收录原片视频：True" in text
     assert "04-原片 收录 2 份" in text
     assert "data/media/material-replication" in text
     assert "仅收录最终选用素材源片" in text
@@ -446,6 +449,53 @@ def test_readme_states_source_retention_rule() -> None:
     # the *material sources* kept in 04-原片 (4).
     note_line = next(line for line in text.splitlines() if line.startswith("- 说明："))
     assert "入选" not in note_line, note_line
+
+
+def test_readme_reports_effective_keep_when_direct_mode_replaces_source_copy() -> None:
+    """Direct mode: the configured switch is on but no *video* lands in 04-原片.
+
+    The readme must show *both* facts, otherwise ``keep_source_video: True`` alone
+    reads as a second copy (or, worse, as silent data loss when a reader sees an
+    empty 04-原片).
+    """
+    manifest = _manifest(source_retention={
+        "keep_source_video": True,
+        "effective_keep": False,
+        "kept_count": 0,
+        "selected_count": 3,
+        "note": "直投模式：02/03 已逐字节交付整片源片，04-原片 改为原片索引，不再重复收录视频",
+        "reason": "02/03 已逐字节交付整片源片，04-原片 改为索引以避免交付目录体积翻倍",
+        "persistent_store": "data/media/material-replication",
+    })
+    text = render_delivery_readme(manifest)
+    assert "retention.keep_source_video：True" in text
+    assert "实际收录原片视频：False" in text
+    assert "04-原片 收录 0 份" in text
+    assert "原片索引" in text
+    assert "原因：" in text and "避免交付目录体积翻倍" in text
+
+
+def test_readme_states_delivery_folder_size_against_ceiling() -> None:
+    """``## 交付体积`` reports the *whole* folder and whether it is over the cap."""
+    limit = 157286400
+    over = _manifest(delivery_folder={
+        "delivery_folder_bytes": limit + 1,
+        "max_delivery_folder_bytes": limit,
+    })
+    over_text = render_delivery_readme(over)
+    assert "## 交付体积" in over_text
+    assert "交付目录合计" in over_text
+    assert "已超限" in over_text
+
+    under = _manifest(delivery_folder={
+        "delivery_folder_bytes": 100,
+        "max_delivery_folder_bytes": limit,
+    })
+    assert "未超限" in render_delivery_readme(under)
+
+
+def test_delivery_folder_section_absent_without_block() -> None:
+    assert "## 交付体积" not in render_delivery_readme(_manifest())
 
 
 def test_source_retention_section_absent_without_block() -> None:

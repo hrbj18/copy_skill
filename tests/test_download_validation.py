@@ -727,6 +727,13 @@ def test_disabled_and_absent_validation_diff_is_additive_only(tmp_path: Path) ->
     for manifest in (absent, disabled):
         for item in manifest.get("downloads") or []:
             item.pop("media_path", None)
+        # ``delivery_folder`` is a *physical* measurement of the delivery directory
+        # (its ``delivery_folder_bytes`` sums every file, including
+        # ``05-过程数据/run_log.json`` whose absolute paths differ between the
+        # ``absent``/``disabled`` tmp dirs).  It is a pipeline-wide derived size,
+        # orthogonal to the validation layer this test pins, so strip it for the
+        # same reason ``media_path`` is stripped.
+        manifest.pop("delivery_folder", None)
     assert absent == disabled
 
     readme_a = (out_absent / "00-交付说明.md").read_text(encoding="utf-8")
