@@ -150,7 +150,13 @@ def test_select_script_replica_reports_duration_rejection(tmp_path: Path) -> Non
     assert result["stage"]["asr_attempted"] == 0
 
 
-def test_select_material_replicas_applies_face_gate_and_author_dedup(tmp_path: Path, monkeypatch) -> None:
+def test_select_material_replicas_ignores_face_class_but_keeps_it(tmp_path: Path, monkeypatch) -> None:
+    """Face class is descriptive metadata, not an admission gate (2026-09-18).
+
+    A themed run may legitimately need footage with people in it (a host, an
+    interview, an on-site recording), so a ``face_heavy`` candidate is selected
+    like any other while its class still travels with the row.
+    """
     config = _config(tmp_path)
     candidates = [
         _candidate("v1", digg=100, author="A", duration=60, heat=0.5),
@@ -179,10 +185,14 @@ def test_select_material_replicas_applies_face_gate_and_author_dedup(tmp_path: P
     )
     result = select_material_replicas(config, candidates, deps=deps)
     selected_ids = [item["candidate"].video_id for item in result["selected"]]
-    # v1 selected; v2 skipped by author dedup; v3 rejected as face_heavy; v4 selected.
-    assert selected_ids == ["v1", "v4"]
-    assert result["counters"]["clips_rejected_face_heavy"] == 1
+    # v2 is skipped by author dedup; v3 is face_heavy yet still selected.
+    assert selected_ids == ["v1", "v3", "v4"]
+    assert result["counters"]["clips_rejected_face_heavy"] == 0
     assert result["counters"]["face_errors"] == 0
+    # The class is still recorded on the delivered row (a reader can see it).
+    classes = {item["candidate"].video_id: item["face"].get("face_class") for item in result["selected"]}
+    assert classes["v3"] == FACE_HEAVY
+    assert not any(entry["stage"] == "face" for entry in result["unmet"])
 
 
 # --------------------------------------------------------------------------- #
@@ -363,7 +373,7 @@ def test_test_config_strips_the_shipped_opt_in_switches() -> None:
 
     registered = (
         "relevance_gate", "visual_verify", "dedup_across_runs", "theme_event_terms", "direct_delivery",
-        "sources", "source_duration_windows",
+        "sources", "source_duration_windows", "theme_material_profiles", "theme_profile_map",
     )
     nested_registered = ("max_age_days",)
     nested_blocks = ("episode_research_pack",)
@@ -394,6 +404,7 @@ def test_test_config_strips_the_shipped_opt_in_switches() -> None:
         expected["material_replica"].pop(key, None)
     for name in nested_blocks:
         expected[name]["enabled"] = False
+        expected[name].pop("ledger_root", None)
     assert test_mr == expected
 
 
@@ -422,7 +433,11 @@ def test_select_material_replicas_surfaces_per_video_face_errors(tmp_path: Path,
     result = select_material_replicas(config, candidates, deps=deps)
     assert result["counters"]["face_errors"] == 1
     assert result["counters"]["face_checked"] == 1
-    assert result["selected"] == []
+    # A failed sample read is recorded (counter + warning) but no longer refuses
+    # the candidate: face class is descriptive metadata (2026-09-18), so an
+    # otherwise on-topic clip still ships with ``FACE_UNAVAILABLE`` on its row.
+    assert [item["candidate"].video_id for item in result["selected"]] == ["v1"]
+    assert result["selected"][0]["face"]["face_class"] == FACE_UNAVAILABLE
     assert any("人脸采样失败" in warning for warning in result["warnings"])
 
 

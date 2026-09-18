@@ -806,6 +806,33 @@ def load_config(path: str | Path | None = None) -> dict[str, Any]:
         value = Path(str(research_pack.get("output_root") or ""))
         if research_pack.get("output_root") and (value.is_absolute() or ".." in value.parts):
             raise ConfigurationError("jobs.material_replication.episode_research_pack.output_root 必须是项目内相对路径")
+        if "ledger_root" in research_pack:
+            ledger_root = research_pack.get("ledger_root")
+            if not isinstance(ledger_root, str) or not ledger_root.strip():
+                raise ConfigurationError(
+                    "jobs.material_replication.episode_research_pack.ledger_root 必须是非空项目内相对路径"
+                )
+            ledger_path = Path(ledger_root)
+            # ``is_absolute()`` is False on Windows for a drive-less rooted path such
+            # as ``/etc/ledgers`` (its ``.root`` is ``\\`` and ``.drive`` is empty),
+            # yet ``project_path`` joins it to the *current drive root*, escaping the
+            # project.  Reject any root-anchored value too.
+            #
+            # ``Path(".").parts`` is ``()`` and ``Path("./").parts`` likewise: a bare
+            # ``"."`` is therefore neither absolute, nor drive-anchored, nor
+            # root-anchored, and carries no ``..`` part, so it would slip through and
+            # silently turn the ledger root into the whole project.  A relative root
+            # with no parts at all is not a usable directory, so reject it too.
+            if (
+                ledger_path.is_absolute()
+                or ledger_path.drive
+                or ledger_path.root
+                or not ledger_path.parts
+                or any(part in (".", "..") for part in ledger_path.parts)
+            ):
+                raise ConfigurationError(
+                    "jobs.material_replication.episode_research_pack.ledger_root 必须是项目内相对路径"
+                )
     workbench = payload.get("workbench")
     if not isinstance(workbench, dict):
         raise ConfigurationError("workbench 必须是对象")

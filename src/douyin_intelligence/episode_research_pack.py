@@ -411,6 +411,7 @@ def research_pack_settings(config: dict[str, Any]) -> dict[str, Any]:
     return {
         "enabled": bool(block.get("enabled", True)),
         "output_root": block.get("output_root") or DEFAULT_OUTPUT_ROOT,
+        "ledger_root": block.get("ledger_root") or "input/research-ledgers",
         "annotate_delivery_manifest": bool(block.get("annotate_delivery_manifest", False)),
     }
 

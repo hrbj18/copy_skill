@@ -555,7 +555,14 @@
         "众擎 URKL 格斗联赛": ["众擎 URKL", "人形机器人格斗联赛", "机器人格斗大赛", "众擎 T800", "URKL 机器人格斗", "机器人格斗", "人形机器人 对打"],
         "智谱 335亿融资": ["智谱 融资", "智谱 GLM", "智谱 完全自训练", "国产大模型 融资", "智谱 上市", "智谱清言", "大模型 RSI"],
         "追觅 MOVA AstraX 机械臂割草机": ["追觅 MOVA AstraX", "MOVA AstraX", "机械臂割草机", "MOVA 割草机器人", "追觅 割草机", "追觅IFA2026"],
-        "平陆运河": ["平陆运河 通航", "平陆运河 首航", "平陆运河 开通", "平陆运河 马道枢纽", "平陆运河 货船", "平陆运河 船闸", "平陆运河 航拍", "平陆运河 现场"]
+        "平陆运河": ["平陆运河 通航", "平陆运河 首航", "平陆运河 开通", "平陆运河 马道枢纽", "平陆运河 货船", "平陆运河 船闸", "平陆运河 航拍", "平陆运河 现场"],
+        "华为昇腾960": ["华为 昇腾960", "昇腾960 超节点", "华为昇腾 960", "昇腾 960 发布", "华为全联接大会 2026", "昇腾 超节点", "华为 算力 超节点", "昇腾960 参数"],
+        "AI智能体劫持网站": ["AI 智能体 劫持", "智能体 抱团", "AI 智能体 安全", "国安部 AI 智能体", "AI 攻击 网站", "大模型 失控", "AI 智能体 攻击", "智能体 漏洞"],
+        "AI能源联盟AEMA": ["英伟达 谷歌 AI 能源", "AI 能源联盟", "Emerald AI", "AEMA 联盟", "数据中心 电力", "AI 数据中心 用电", "英伟达 谷歌 联盟", "100GW 电网"],
+        "苹果iPhoneDuo": ["iPhone Duo", "苹果 折叠屏", "苹果 首款折叠屏", "iPhone 18 Pro", "苹果 发布会 2026", "iPhone Duo 参数", "苹果 折叠 价格", "iPhone Duo 开售"],
+        "华为MateXT2": ["华为 Mate XT 2", "Mate XT2 非凡大师", "华为 三折叠", "麒麟9050 Pro", "华为 三折叠 发布", "Mate XT2 开售", "鸿蒙7", "华为 折叠屏 价格"],
+        "手机集体涨价": ["手机 涨价", "内存 涨价", "存储 涨价", "手机 集体涨价", "存储芯片 短缺", "手机 价格上涨", "HBM 产能 手机", "内存 涨价 手机"],
+        "日本AI篡改历史观": ["大模型历史观污染", "日本AI历史观", "日本历史观", "AI篡改历史", "日本篡改侵华历史", "数字军国主义"]
       },
       "_theme_subject_terms_comment": "与 theme_keywords 配对的【主体闸门】补充词表（2026-09-15 新增）。刻意独立成键、而不是复用 theme_keywords：放宽搜索词 与 放宽准入 是两个独立决定。9.14 实测里一个裸类目词（「扫地机」）就能放行竞品视频，因为 min_subject_hits=1 只要求命中【某一个】主体词 ⇒ 加类目词是一种必须显式点名的放宽；若复用关键词表，一次搜索侧改动会静默改变闸门接受范围。本表用语是【追加】到 head 派生词表之后，绝不替换，故召回单调不减。同样支持原样主题或 base 作键；缺省时 subject_terms 与改动前逐字节相同。",
       "theme_subject_terms": {
@@ -565,7 +572,14 @@
         "理想i9": ["理想", "i9"],
         "努比亚豆包手机": ["努比亚", "NaviX", "豆包"],
         "荣耀Magic9超能版": ["荣耀", "Magic9", "超能版"],
-        "追觅 MOVA AstraX 机械臂割草机": ["割草机器人", "割草机"]
+        "追觅 MOVA AstraX 机械臂割草机": ["割草机器人", "割草机"],
+        "华为昇腾960": ["昇腾", "华为昇腾", "昇腾960"],
+        "AI智能体劫持网站": ["智能体", "AI 智能体", "AI智能体"],
+        "AI能源联盟AEMA": ["英伟达", "谷歌", "Emerald AI", "AEMA", "数据中心"],
+        "苹果iPhoneDuo": ["iPhone", "苹果", "Duo"],
+        "华为MateXT2": ["Mate XT", "Mate XT2", "华为 三折叠", "麒麟 9050"],
+        "手机集体涨价": ["涨价", "内存涨价", "存储涨价", "手机涨价"],
+        "日本AI篡改历史观": ["历史观", "篡改历史", "AI篡改", "篡改侵华", "数字军国主义", "污染大模型"]
       },
       "_theme_event_terms_comment": "【事件词表】（2026-09-16 新增），只被 material_replica.direct_delivery（原片直投）消费，形如 {主题: [事件词…]}。作用是给「名人＋事件」类主题做交付分类：标题命中任一词的候选算【事件直接素材】→ 02-主素材（例如完整采访、现场实录）；一个都没命中的算【通用人物素材】→ 03-辅助素材（挥手、打招呼、走红毯这类不体现具体事件的画面）。刻意做成第三张独立表：前两张表决定【什么能进池子】，这张决定【进了池子怎么分类】，复用会让一次搜索侧放宽静默改变主/辅划分。缺省 → []，此时主素材回落到「时长最长」，行为与不配该键时一致。",
       "theme_event_terms": {
@@ -575,7 +589,87 @@
         "理想i9": ["发布会", "上市", "实测", "试驾", "体验", "评测", "开箱"],
         "努比亚豆包手机": ["发布会", "开售", "实测", "上手", "体验", "开箱", "评测"],
         "荣耀Magic9超能版": ["发布会", "实测", "上手", "体验", "开箱", "评测", "电池"],
-        "平陆运河": ["通航", "首航", "开通", "通水", "试航", "过闸", "船闸", "闸门", "航拍", "现场", "仪式"]
+        "平陆运河": ["通航", "首航", "开通", "通水", "试航", "过闸", "船闸", "闸门", "航拍", "现场", "仪式"],
+        "华为昇腾960": ["发布", "发布会", "超节点", "全联接", "算力", "NPO", "现场", "讲解"],
+        "AI智能体劫持网站": ["劫持", "攻击", "国安部", "通报", "抱团", "安全", "失控", "漏洞"],
+        "AI能源联盟AEMA": ["联盟", "成立", "电力", "电网", "数据中心", "用电", "并网", "需求响应"],
+        "苹果iPhoneDuo": ["发布", "发布会", "开售", "预售", "上手", "开箱", "实测", "折叠", "价格"],
+        "华为MateXT2": ["发布", "发布会", "开售", "上手", "开箱", "实测", "三折叠", "麒麟", "鸿蒙"],
+        "手机集体涨价": ["涨价", "上调", "调价", "成本", "内存", "存储", "缺货", "价格"],
+        "日本AI篡改历史观": ["篡改", "历史观", "军国主义", "侵华", "污染", "国安部"]
+      },
+      "_theme_material_profiles_comment": "【题材策略档案】（2026-09-18 新增），形如 {profile名: {...}}。内置 default 兜底，另含 person_or_company_event / official_notice_or_security_event / product_or_industry_trend 三类。每个 profile 提供：preferred_source_kinds（允许/优先的来源类别）、main_roles（主素材角色优先序）、original_source_bonus（原始/官方来源加分）、event_term_weight（标题事件词权重）、heat_weight（平台内热度权重）、label（报告/目录标签），以及 official_accounts / news_accounts（人工维护的账号子串表，用于确定性判定官方原片与新闻播报）、commentary_terms（自媒体二次剪辑/解说标记）、role_terms（按 lane 覆盖内置角色词表，未给出的 lane 沿用内置）。本块是【下游选择与交付层】的纯函数契约，不改变 theme_keywords / theme_subject_terms / theme_event_terms 的任何语义；缺省或坏配置一律回退 default；题材只由显式配置或确定性默认规则决定，不用 LLM、不用模糊词表猜。official_accounts 默认留空：离线环境无法确认账号主体，宁可判 platform_video 也不虚构「官方」；需要判定官方原片时由运营显式补账号。tests/conftest.py 的 opt-in seam 会把它从测试夹具里剥掉。",
+      "theme_material_profiles": {
+        "default": {
+          "label": "通用",
+          "preferred_source_kinds": ["official_original", "news_broadcast", "creator_commentary", "platform_video"],
+          "main_roles": ["event_direct", "subject_person", "product_or_scene", "news_anchor_or_reporter", "commentary"],
+          "original_source_bonus": 0.1,
+          "event_term_weight": 1.0,
+          "heat_weight": 0.2,
+          "official_accounts": [],
+          "news_accounts": [],
+          "commentary_terms": ["解说", "点评", "讲解", "科普", "吐槽", "怎么看", "分析", "盘点", "解读", "总结", "开箱", "实测", "评测", "上手"],
+          "role_terms": {}
+        },
+        "person_or_company_event": {
+          "label": "人物/企业事件",
+          "preferred_source_kinds": ["official_original", "news_broadcast", "creator_commentary", "platform_video"],
+          "main_roles": ["event_direct", "subject_person", "news_anchor_or_reporter", "commentary", "product_or_scene"],
+          "original_source_bonus": 0.15,
+          "event_term_weight": 4.0,
+          "heat_weight": 0.25,
+          "official_accounts": [],
+          "news_accounts": ["央视", "新华社", "人民日报", "澎湃", "环球时报", "科技日报", "中国新闻网", "中新社"],
+          "commentary_terms": ["解说", "点评", "讲解", "科普", "吐槽", "怎么看", "分析", "盘点", "解读", "总结", "开箱", "实测", "评测", "上手"],
+          "role_terms": {}
+        },
+        "official_notice_or_security_event": {
+          "label": "官方通报/安全事件",
+          "preferred_source_kinds": ["official_original", "news_broadcast", "platform_video", "creator_commentary"],
+          "main_roles": ["news_anchor_or_reporter", "event_direct", "subject_person", "commentary", "product_or_scene"],
+          "original_source_bonus": 0.35,
+          "event_term_weight": 3.0,
+          "heat_weight": 0.15,
+          "official_accounts": ["工信部", "网信办", "应急管理部", "市场监管总局", "公安部", "国家医保局", "国家安全部"],
+          "news_accounts": ["央视", "新华社", "人民日报", "澎湃", "环球时报", "科技日报", "中国新闻网", "中新社"],
+          "commentary_terms": ["解说", "点评", "讲解", "科普", "吐槽", "怎么看", "分析", "盘点", "解读", "总结", "开箱", "实测", "评测", "上手"],
+          "role_terms": {
+            "news_anchor_or_reporter": ["记者", "主持人", "主播", "播报", "连线", "现场报道", "发言人", "通报", "新闻"]
+          }
+        },
+        "product_or_industry_trend": {
+          "label": "产品/行业趋势",
+          "preferred_source_kinds": ["official_original", "creator_commentary", "platform_video", "news_broadcast"],
+          "main_roles": ["product_or_scene", "event_direct", "commentary", "subject_person", "news_anchor_or_reporter"],
+          "original_source_bonus": 0.2,
+          "event_term_weight": 2.0,
+          "heat_weight": 0.3,
+          "official_accounts": [],
+          "news_accounts": ["央视", "新华社", "人民日报", "澎湃", "环球时报", "科技日报", "中国新闻网", "中新社"],
+          "commentary_terms": ["解说", "点评", "讲解", "科普", "吐槽", "怎么看", "分析", "盘点", "解读", "总结", "开箱", "实测", "评测", "上手"],
+          "role_terms": {}
+        }
+      },
+      "_theme_profile_map_comment": "【主题→profile 显式映射】（2026-09-18 新增）。键可写【原样主题】或 sanitize 后的 base；值为上方 profile 名。未列出、值未知或本键整体缺省时一律回退 default（坏拼写绝不静默换档）。与 theme_keywords / theme_subject_terms / theme_event_terms 完全解耦。",
+      "theme_profile_map": {
+        "特朗普致电黄仁勋": "person_or_company_event",
+        "雷军夜访宇树科技": "person_or_company_event",
+        "马斯克谈特斯拉合并": "person_or_company_event",
+        "智谱 335亿融资": "person_or_company_event",
+        "理想i9": "product_or_industry_trend",
+        "努比亚豆包手机": "product_or_industry_trend",
+        "荣耀Magic9超能版": "product_or_industry_trend",
+        "众擎 URKL 格斗联赛": "product_or_industry_trend",
+        "追觅 MOVA AstraX 机械臂割草机": "product_or_industry_trend",
+        "华为昇腾960": "product_or_industry_trend",
+        "AI能源联盟AEMA": "product_or_industry_trend",
+        "苹果iPhoneDuo": "product_or_industry_trend",
+        "华为MateXT2": "product_or_industry_trend",
+        "手机集体涨价": "product_or_industry_trend",
+        "平陆运河": "official_notice_or_security_event",
+        "AI智能体劫持网站": "official_notice_or_security_event",
+        "日本AI篡改历史观": "official_notice_or_security_event"
       },
       "max_path_chars": 260,
       "sources": ["bilibili"],
@@ -711,6 +805,7 @@
       "episode_research_pack": {
         "enabled": true,
         "output_root": "output/每期研究包",
+        "ledger_root": "input/research-ledgers",
         "annotate_delivery_manifest": false,
         "consumer_root": "D:/刘宇钊/codex_work/Haike_video"
       }

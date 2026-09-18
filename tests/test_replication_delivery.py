@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import re
 from pathlib import Path
@@ -8,11 +9,17 @@ import pytest
 
 from douyin_intelligence.exporter import atomic_write_json
 from douyin_intelligence.replication_delivery import (
+    CATALOG_NAME,
+    MAX_DELIVERY_FOLDER_BYTES,
     build_manifest,
+    build_material_catalog,
     ensure_delivery_tree,
+    is_signed_download_url,
     publish_directory,
     render_delivery_readme,
     validate_delivery_manifest,
+    validate_material_catalog,
+    write_material_catalog,
 )
 
 
@@ -59,16 +66,21 @@ def test_validate_manifest_passes(tmp_path: Path) -> None:
     assert result["errors"] == []
 
 
-def test_validate_manifest_rejects_face_heavy_and_low_face_main(tmp_path: Path) -> None:
+def test_validate_manifest_allows_face_heavy_material(tmp_path: Path) -> None:
+    """Face is no longer a delivery gate (2026-09-18 strategy §3.3).
+
+    A ``face_heavy`` main material *and* a non-``face_free`` supporting material
+    must both be legal: ``face_class`` is a descriptive field now, not a
+    rejection reason.  Only the catalog / size contracts can fail a delivery.
+    """
     path = tmp_path / "清单.json"
     atomic_write_json(path, _manifest(
-        main_materials=[{"clip_id": "main-01", "file": "a.mp4", "duration": 6.0, "face_class": "low_face"}],
-        supporting_materials=[{"clip_id": "support-01", "file": "b.mp4", "duration": 5.0, "face_class": "face_heavy"}],
+        main_materials=[{"clip_id": "main-01", "file": "a.mp4", "duration": 6.0, "face_class": "face_heavy"}],
+        supporting_materials=[{"clip_id": "support-01", "file": "b.mp4", "duration": 5.0, "face_class": "low_face"}],
     ))
     result = validate_delivery_manifest(path)
-    assert result["status"] == "fail"
-    assert any("face_heavy" in error for error in result["errors"])
-    assert any("非 face_free" in error for error in result["errors"])
+    assert result["status"] == "pass", result["errors"]
+    assert not any("face" in error for error in result["errors"])
 
 
 def test_validate_manifest_handles_missing_file(tmp_path: Path) -> None:
@@ -645,3 +657,212 @@ def test_download_and_validation_wording_is_unambiguous() -> None:
     # D: validated counts *calls* and breaks down so it reconciles with 分阶段.
     assert "校验 9 次（脚本 1 + 素材 8）：全片解码通过 9 条" in text
     assert "脚本 校验 1 次（通过 1 / 剔除 0）；素材 校验 8 次（通过 8 / 剔除 0）" in text
+
+
+# --------------------------------------------------------------------------- #
+# 00-素材目录.json -- the machine-readable material catalog (strategy §3.4).
+# --------------------------------------------------------------------------- #
+_CATALOG_MAIN = "02-主素材/苹果折叠屏-主素材-01-开场.mp4"
+_CATALOG_SUPPORT = "03-辅助素材/苹果折叠屏-辅助素材-01-要点.mp4"
+_CATALOG_ENTRY_KEYS = (
+    "material_id", "file_path", "recommended_usage", "source_url", "title", "author",
+    "source_kind", "source_authority", "visual_role", "rights_status",
+    "relevance_score", "heat_score", "duration_seconds", "file_bytes", "face_class",
+)
+
+
+def _write_bytes(path: Path, size: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * size)
+
+
+def _catalog_delivery(tmp_path: Path, *, main_bytes: int = 128, support_bytes: int = 256):
+    """A delivery folder with real media + catalog (plus its manifest)."""
+    root = tmp_path / "9.12苹果折叠屏复刻视频"
+    ensure_delivery_tree(root)
+    _write_bytes(root / _CATALOG_MAIN, main_bytes)
+    _write_bytes(root / _CATALOG_SUPPORT, support_bytes)
+    main = [{"clip_id": "main-01", "file": _CATALOG_MAIN, "duration": 6.0,
+             "face_class": "face_heavy", "suggested_use": "hook"}]
+    support = [{"clip_id": "support-01", "file": _CATALOG_SUPPORT, "duration": 5.0,
+                "face_class": "low_face", "suggested_use": "key_points[1]"}]
+    manifest = _manifest(main_materials=main, supporting_materials=support)
+    details = {
+        _CATALOG_MAIN: {
+            "video_id": "7301", "author": "作者A", "title": "标题A",
+            "source_url": "https://www.douyin.com/video/7301", "source": "douyin",
+            "heat_score": 0.9, "relevance_score": 0.5, "rights_status": "review_required",
+        },
+        _CATALOG_SUPPORT: {
+            "video_id": "7302", "author": "作者B", "title": "标题B",
+            "source_url": "https://www.douyin.com/video/7302", "source": "douyin",
+            "heat_score": 0.4, "relevance_score": 0.2,
+        },
+    }
+    catalog = build_material_catalog(
+        theme=manifest["theme"], folder=manifest["folder"], business_date=manifest["business_date"],
+        generated_at=manifest["generated_at"], main_materials=main, supporting_materials=support,
+        details=details, root=root,
+    )
+    write_material_catalog(root, catalog)
+    atomic_write_json(root / "清单.json", manifest)
+    return root, manifest, catalog
+
+
+def _mutate_catalog(root: Path, mutate) -> Path:
+    catalog_path = root / CATALOG_NAME
+    payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+    mutate(payload)
+    atomic_write_json(catalog_path, payload)
+    return catalog_path
+
+
+def test_catalog_lists_every_entity_with_required_fields(tmp_path: Path) -> None:
+    root, manifest, catalog = _catalog_delivery(tmp_path)
+    listed = [entry["file_path"] for entry in catalog["entries"]]
+    # Both physical entities are covered, in main-then-support order, exactly once.
+    assert listed == [_CATALOG_MAIN, _CATALOG_SUPPORT]
+    assert catalog["count"] == 2
+    assert catalog["total_bytes"] == 128 + 256
+    for entry in catalog["entries"]:
+        for key in _CATALOG_ENTRY_KEYS:
+            assert key in entry, key
+        assert entry["material_id"]
+        assert entry["face_class"]  # face_class is carried through, descriptive only
+        assert (root / entry["file_path"]).stat().st_size == entry["file_bytes"]
+    # Tags that could not be judged fall back honestly rather than being invented.
+    assert catalog["entries"][0]["source_kind"] == "unknown"
+    assert catalog["entries"][0]["source_authority"] == "unknown"
+    assert catalog["entries"][0]["visual_role"] == "unknown"
+    assert catalog["entries"][0]["rights_status"] == "review_required"
+
+
+def test_catalog_delivery_with_face_heavy_material_validates(tmp_path: Path) -> None:
+    root, _, _ = _catalog_delivery(tmp_path)
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "pass", result["errors"]
+
+
+def test_legacy_manifest_without_catalog_stays_valid(tmp_path: Path) -> None:
+    """Back-compat: an annotation-style legacy manifest has no current size block."""
+    root = tmp_path / "delivery"
+    ensure_delivery_tree(root)
+    atomic_write_json(root / "清单.json", _manifest())
+    assert validate_delivery_manifest(root / "清单.json")["status"] == "pass"
+
+
+def test_current_manifest_without_catalog_fails(tmp_path: Path) -> None:
+    """A folder produced by the current publisher must expose the downstream catalog."""
+    root = tmp_path / "delivery"
+    ensure_delivery_tree(root)
+    manifest = _manifest()
+    manifest["delivery_folder"] = {
+        "delivery_folder_bytes": 0,
+        "max_delivery_folder_bytes": MAX_DELIVERY_FOLDER_BYTES,
+    }
+    atomic_write_json(root / "清单.json", manifest)
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "fail"
+    assert any(CATALOG_NAME in error for error in result["errors"])
+
+
+def test_catalog_missing_entity_fails(tmp_path: Path) -> None:
+    root, _, _ = _catalog_delivery(tmp_path)
+    # Drop the supporting entity both from disk and from the catalog: a listed
+    # main entity ``_CATALOG_SUPPORT`` must still be present -> coverage error.
+    (root / _CATALOG_SUPPORT).unlink()
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "fail"
+    assert any("不存在" in error for error in result["errors"])
+
+
+def test_catalog_omitting_a_manifest_entity_fails(tmp_path: Path) -> None:
+    root, _, _ = _catalog_delivery(tmp_path)
+    _mutate_catalog(root, lambda payload: payload["entries"].pop())
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "fail"
+    assert any("未列入素材目录" in error for error in result["errors"])
+
+
+def test_catalog_duplicate_file_path_fails(tmp_path: Path) -> None:
+    root, _, _ = _catalog_delivery(tmp_path)
+    _mutate_catalog(root, lambda payload: payload["entries"].append(dict(payload["entries"][0])))
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "fail"
+    assert any("重复实体路径" in error for error in result["errors"])
+
+
+@pytest.mark.parametrize("unsafe", ["C:/tmp/evil.mp4", "/abs/evil.mp4", "../evil.mp4", "02-主素材/../../evil.mp4"])
+def test_catalog_unsafe_path_fails(tmp_path: Path, unsafe: str) -> None:
+    root, _, _ = _catalog_delivery(tmp_path)
+    _mutate_catalog(root, lambda payload: payload["entries"][0].__setitem__("file_path", unsafe))
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "fail"
+    assert any("不安全" in error for error in result["errors"])
+
+
+def test_catalog_byte_mismatch_fails(tmp_path: Path) -> None:
+    root, _, _ = _catalog_delivery(tmp_path)
+    _mutate_catalog(root, lambda payload: payload["entries"][0].__setitem__("file_bytes", 1))
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "fail"
+    assert any("file_bytes 与实体不符" in error for error in result["errors"])
+
+
+def test_catalog_signed_download_url_fails(tmp_path: Path) -> None:
+    root, _, _ = _catalog_delivery(tmp_path)
+    signed = "https://v3-web.douyinvod.com/abc?x-expires=1700000000&signature=deadbeef"
+    _mutate_catalog(root, lambda payload: payload["entries"][0].__setitem__("source_url", signed))
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "fail"
+    assert any("签名下载 URL" in error for error in result["errors"])
+
+
+@pytest.mark.parametrize("key,value", [
+    ("source_kind", "made_up"), ("source_authority", "official_ish"),
+    ("visual_role", "portrait"), ("recommended_usage", "primary"), ("rights_status", "free"),
+])
+def test_catalog_illegal_label_fails(tmp_path: Path, key: str, value: str) -> None:
+    root, _, _ = _catalog_delivery(tmp_path)
+    _mutate_catalog(root, lambda payload: payload["entries"][0].__setitem__(key, value))
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "fail"
+    assert any(f"{key}=" in error for error in result["errors"])
+
+
+def test_catalog_total_over_cap_fails(tmp_path: Path) -> None:
+    root, _, _ = _catalog_delivery(tmp_path)
+    result = validate_material_catalog(root / CATALOG_NAME, max_total_bytes=10)
+    assert result["status"] == "fail"
+    assert any("超过上限" in error for error in result["errors"])
+
+
+def test_delivery_folder_over_hard_cap_fails_manifest(tmp_path: Path) -> None:
+    """The 200,000,000-byte cap is enforced by the manifest validator itself."""
+    root, manifest, _ = _catalog_delivery(tmp_path)
+    manifest["delivery_folder"] = {
+        "delivery_folder_bytes": MAX_DELIVERY_FOLDER_BYTES + 1,
+        "max_delivery_folder_bytes": MAX_DELIVERY_FOLDER_BYTES,
+    }
+    atomic_write_json(root / "清单.json", manifest)
+    result = validate_delivery_manifest(root / "清单.json")
+    assert result["status"] == "fail"
+    assert any("超过上限" in error for error in result["errors"])
+
+
+def test_delivery_folder_at_hard_cap_passes(tmp_path: Path) -> None:
+    root, manifest, _ = _catalog_delivery(tmp_path)
+    manifest["delivery_folder"] = {
+        "delivery_folder_bytes": MAX_DELIVERY_FOLDER_BYTES,
+        "max_delivery_folder_bytes": MAX_DELIVERY_FOLDER_BYTES,
+    }
+    atomic_write_json(root / "清单.json", manifest)
+    assert validate_delivery_manifest(root / "清单.json")["status"] == "pass"
+
+
+def test_signed_download_url_detector() -> None:
+    assert is_signed_download_url("https://www.douyin.com/video/7301") is False
+    assert is_signed_download_url("") is False
+    assert is_signed_download_url("https://v3-web.douyinvod.com/a/b.mp4?x-expires=1") is True
+    assert is_signed_download_url("https://p3-sign.douyinpic.com/a?x-signature=z") is True
+    assert is_signed_download_url("https://example.com/a.mp4?a_bogus=1") is True

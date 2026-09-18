@@ -665,3 +665,396 @@ def project_path(config: dict[str, Any], value: str | Path) -> Path:
         return path
     root = Path(str(config.get("_project_root") or Path(__file__).resolve().parents[2]))
     return root / path
+
+
+# --------------------------------------------------------------------------- #
+# Theme material profiles -- the deterministic genre-strategy layer (2026-09-18).
+#
+# ``jobs.material_replication.theme_material_profiles`` names one *profile* per
+# genre (``person_or_company_event`` / ``official_notice_or_security_event`` /
+# ``product_or_industry_trend``, plus a built-in ``default``) and
+# ``theme_profile_map`` binds a theme to one of them.  A profile only *describes*
+# preferences -- which ``source_kind`` values are wanted, which ``visual_role``
+# values make the main material, how much an original source is worth, the
+# report label -- it decides **nothing** about what may enter the pool; that
+# stays with ``subject_terms`` above, and these keys never touch
+# ``theme_keywords`` / ``theme_subject_terms`` / ``theme_event_terms``.
+#
+# Everything below is a pure function of the candidate's ``source`` / ``title`` /
+# ``author`` plus the profile, so it is offline, reproducible and auditable, and
+# it never infers a genre with an LLM or a fuzzy word table: an unmapped theme (or
+# a malformed block) falls back to ``default``.  Source nature and rights risk
+# stay **separate fields** -- a material is never promoted to "authorized"
+# because it looks official.
+# --------------------------------------------------------------------------- #
+
+#: Canonical label vocabularies.  A value outside these sets is a bug, not a new
+#: category, so the inference never *invents* a label: anything unrecognised
+#: degrades to ``unknown``.
+SOURCE_KINDS: tuple[str, ...] = (
+    "official_original",
+    "news_broadcast",
+    "creator_commentary",
+    "platform_video",
+    "unknown",
+)
+SOURCE_AUTHORITIES: tuple[str, ...] = ("official", "news_media", "creator", "unknown")
+VISUAL_ROLES: tuple[str, ...] = (
+    "event_direct",
+    "subject_person",
+    "product_or_scene",
+    "news_anchor_or_reporter",
+    "commentary",
+    "unknown",
+)
+RECOMMENDED_USAGES: tuple[str, ...] = ("main", "supporting", "optional")
+RIGHTS_STATUSES: tuple[str, ...] = ("unknown", "review_required")
+
+#: ``source_kind`` -> ``source_authority``.  A plain platform upload carries no
+#: identifiable publisher, so it degrades to ``unknown`` instead of being
+#: silently promoted to "creator" -- that would be an unfounded attribution.
+_KIND_AUTHORITY: dict[str, str] = {
+    "official_original": "official",
+    "news_broadcast": "news_media",
+    "creator_commentary": "creator",
+    "platform_video": "unknown",
+    "unknown": "unknown",
+}
+
+#: Platform names that are ordinary UGC video platforms.  Used only to tell "a
+#: normal platform upload" (``platform_video``) apart from "we cannot even name
+#: the platform" (``unknown``); appearing here grants **no** authority.
+_PLATFORM_SOURCES: frozenset[str] = frozenset(
+    {"douyin", "bilibili", "kuaishou", "xiaohongshu"}
+)
+
+#: Default visual-role vocabulary.  A profile may replace an individual lane via
+#: its ``role_terms``; whatever it omits keeps these values.  Lanes are only
+#: *labels* -- no lane is a rejection reason.
+_DEFAULT_ROLE_TERMS: dict[str, tuple[str, ...]] = {
+    "news_anchor_or_reporter": (
+        "记者", "主持人", "主播", "播报", "连线", "现场报道", "发言人", "新闻",
+    ),
+    "event_direct": (
+        "现场", "采访", "实录", "发布会", "峰会", "仪式", "全程", "完整版",
+        "访谈", "对话", "返场", "直播回放",
+    ),
+    "subject_person": (
+        "人物", "先生", "女士", "总裁", "CEO", "创始人", "董事长", "演讲",
+        "现身", "出席", "受访", "到访", "探访",
+    ),
+    "product_or_scene": (
+        "开箱", "上手", "实拍", "产品", "评测", "测评", "外观", "演示", "航拍",
+        "画面", "参数", "体验", "拆解", "机位",
+    ),
+    "commentary": (
+        "解说", "点评", "讲解", "科普", "吐槽", "怎么看", "分析", "盘点",
+        "解读", "总结",
+    ),
+}
+
+#: Fixed evaluation order: a title that hits several lanes still gets exactly one
+#: label, chosen by this priority (most specific first).
+_ROLE_PRIORITY: tuple[str, ...] = (
+    "news_anchor_or_reporter",
+    "event_direct",
+    "subject_person",
+    "product_or_scene",
+    "commentary",
+)
+
+#: Fallback title/author markers for :func:`_infer_source_kind`.  These mark a
+#: *creator* (二次剪辑/解说), not an official source, so they may only ever
+#: downgrade -- never promote -- the authority.
+_DEFAULT_COMMENTARY_TERMS: tuple[str, ...] = (
+    "解说", "点评", "讲解", "科普", "吐槽", "怎么看", "分析", "盘点", "解读",
+    "总结", "开箱", "实测", "评测", "上手",
+)
+
+#: Built-in ``default`` profile.  Every field is spelled out so a config that
+#: omits one inherits a documented value rather than a surprise.
+_BUILTIN_DEFAULT_PROFILE: dict[str, Any] = {
+    "label": "通用",
+    "preferred_source_kinds": (
+        "official_original", "news_broadcast", "creator_commentary", "platform_video",
+    ),
+    "main_roles": (
+        "event_direct", "subject_person", "product_or_scene",
+        "news_anchor_or_reporter", "commentary",
+    ),
+    "original_source_bonus": 0.1,
+    "event_term_weight": 1.0,
+    "heat_weight": 0.2,
+    "official_accounts": (),
+    "news_accounts": (),
+    "commentary_terms": _DEFAULT_COMMENTARY_TERMS,
+    "role_terms": _DEFAULT_ROLE_TERMS,
+}
+
+
+def _material_settings(config: dict[str, Any]) -> dict[str, Any]:
+    """``jobs.material_replication``, or ``{}`` when absent/unusable."""
+    settings = (config.get("jobs") or {}).get("material_replication")
+    return settings if isinstance(settings, dict) else {}
+
+
+def _as_str_tuple(value: Any) -> tuple[str, ...]:
+    """A list of trimmed, non-empty, de-duplicated strings; a bare scalar -> 1-tuple."""
+    if isinstance(value, (list, tuple, set)):
+        result: list[str] = []
+        for item in value:
+            text = str(item if item is not None else "").strip()
+            if text and text not in result:
+                result.append(text)
+        return tuple(result)
+    text = str(value if value is not None else "").strip()
+    return (text,) if text else ()
+
+
+def _enum_tuple(value: Any, allowed: tuple[str, ...]) -> tuple[str, ...]:
+    """Configured values kept in **configured order**, restricted to ``allowed``."""
+    return tuple(item for item in _as_str_tuple(value) if item in allowed)
+
+
+def _as_float(value: Any, fallback: float) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _normalize_role_terms(raw: Any) -> dict[str, tuple[str, ...]]:
+    """Per-lane role vocabulary: a supplied lane *replaces* its built-in lane.
+
+    Override (not merge) mirrors ``subject_aliases`` above: an explicit,
+    operator-supplied list is the whole truth for that lane, so nothing hidden
+    keeps matching.  An unknown lane name is ignored -- it could never be
+    evaluated by :data:`_ROLE_PRIORITY` anyway.
+    """
+    terms: dict[str, tuple[str, ...]] = dict(_DEFAULT_ROLE_TERMS)
+    if isinstance(raw, dict):
+        for lane, values in raw.items():
+            name = str(lane if lane is not None else "").strip()
+            if name in _ROLE_PRIORITY:
+                terms[name] = _as_str_tuple(values)
+    return terms
+
+
+def _normalize_material_profile(name: str, raw: Any) -> dict[str, Any]:
+    """A profile dict with every key present, typed and enum-checked.
+
+    Absent / malformed fields fall back to :data:`_BUILTIN_DEFAULT_PROFILE`, so a
+    half-written profile degrades field-by-field instead of aborting a run.
+    """
+    payload = raw if isinstance(raw, dict) else {}
+    fallback = _BUILTIN_DEFAULT_PROFILE
+    label = str(payload.get("label") or "").strip() or (
+        fallback["label"] if name == "default" else name
+    )
+    preferred = _enum_tuple(payload.get("preferred_source_kinds"), SOURCE_KINDS)
+    main_roles = _enum_tuple(payload.get("main_roles"), VISUAL_ROLES)
+    return {
+        "name": name,
+        "label": label,
+        "preferred_source_kinds": preferred or tuple(fallback["preferred_source_kinds"]),
+        "main_roles": main_roles or tuple(fallback["main_roles"]),
+        "original_source_bonus": _as_float(
+            payload.get("original_source_bonus"), fallback["original_source_bonus"]
+        ),
+        "event_term_weight": _as_float(
+            payload.get("event_term_weight"), fallback["event_term_weight"]
+        ),
+        "heat_weight": _as_float(payload.get("heat_weight"), fallback["heat_weight"]),
+        "official_accounts": _as_str_tuple(payload.get("official_accounts")),
+        "news_accounts": _as_str_tuple(payload.get("news_accounts")),
+        "commentary_terms": _as_str_tuple(payload.get("commentary_terms"))
+        or tuple(fallback["commentary_terms"]),
+        "role_terms": _normalize_role_terms(payload.get("role_terms")),
+    }
+
+
+def material_profiles(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Every configured profile, normalized, plus a built-in ``default``.
+
+    ``jobs.material_replication.theme_material_profiles`` is ``{名称: {...}}``.
+    Underscore-prefixed keys are treated as comments and skipped, and a blank /
+    non-dict entry is ignored.  ``default`` is always present, so a caller can
+    index the result without a guard.
+    """
+    raw = _material_settings(config).get("theme_material_profiles")
+    profiles: dict[str, dict[str, Any]] = {}
+    if isinstance(raw, dict):
+        for name, value in raw.items():
+            key = str(name if name is not None else "").strip()
+            if not key or key.startswith("_"):
+                continue
+            profiles[key] = _normalize_material_profile(key, value)
+    profiles.setdefault("default", _normalize_material_profile("default", {}))
+    return profiles
+
+
+def material_profile_name(theme: str, config: dict[str, Any]) -> str:
+    """The profile name bound to ``theme``, or ``"default"``.
+
+    ``jobs.material_replication.theme_profile_map`` is ``{主题: profile名}``;
+    both the raw ``theme`` and its sanitized ``base`` are accepted as keys (the
+    same convention as ``theme_keywords``).  A missing map, a missing entry, or a
+    value naming a profile that does not exist all resolve to ``default`` -- a
+    typo must never silently pick a wrong strategy.
+    """
+    settings = _material_settings(config)
+    raw_map = settings.get("theme_profile_map")
+    if isinstance(raw_map, dict):
+        profiles = material_profiles(config)
+        base = _theme_base(theme, settings)
+        for key in (str(theme or "").strip(), base):
+            if not key:
+                continue
+            value = raw_map.get(key)
+            name = str(value if value is not None else "").strip()
+            if name in profiles:
+                return name
+    return "default"
+
+
+def resolve_material_profile(theme: str, config: dict[str, Any]) -> dict[str, Any]:
+    """The normalized profile a theme runs under (never ``None``).
+
+    Resolve once per theme and hand the result to :func:`infer_material_labels`
+    for every candidate, so all candidates of one theme are labelled under the
+    same, auditable profile.
+    """
+    return material_profiles(config)[material_profile_name(theme, config)]
+
+
+def _hits_any(text: str, terms: Any) -> bool:
+    """Case-insensitive substring match of ``text`` against an explicit term list."""
+    folded = str(text or "").casefold()
+    if not folded:
+        return False
+    for term in terms or ():
+        needle = str(term if term is not None else "").strip().casefold()
+        if needle and needle in folded:
+            return True
+    return False
+
+
+def _infer_source_kind(
+    source: str, title: str, author: str, profile: dict[str, Any]
+) -> str:
+    """``source_kind`` from the platform, title, author and the profile's tables.
+
+    Order is deliberate and one-way: an explicit official account wins, then an
+    explicit news outlet, then a creator marker in the title/author, then "a
+    normal upload on a known platform", else ``unknown``.  Only an *explicit*
+    account list in the profile (operator-curated, exact substring) can ever
+    produce ``official_original`` / ``news_broadcast``; nothing is inferred from
+    a name that merely *sounds* official.
+    """
+    if _hits_any(author, profile.get("official_accounts")):
+        return "official_original"
+    if _hits_any(author, profile.get("news_accounts")):
+        return "news_broadcast"
+    commentary = profile.get("commentary_terms")
+    if _hits_any(title, commentary) or _hits_any(author, commentary):
+        return "creator_commentary"
+    if str(source or "").strip().casefold() in _PLATFORM_SOURCES:
+        return "platform_video"
+    return "unknown"
+
+
+def _infer_visual_role(title: str, author: str, profile: dict[str, Any]) -> str:
+    """``visual_role`` from the title (and the author, anchor lane only).
+
+    Lanes are evaluated in the fixed :data:`_ROLE_PRIORITY` order, so a title
+    mentioning both a reporter and a product scene gets one stable label.  The
+    news-anchor lane also reads the author, because a newsroom account name
+    ("...新闻") is exactly what a title alone cannot supply.
+    """
+    role_terms = profile.get("role_terms")
+    if not isinstance(role_terms, dict) or not role_terms:
+        role_terms = _DEFAULT_ROLE_TERMS
+    for role in _ROLE_PRIORITY:
+        terms = role_terms.get(role)
+        if _hits_any(title, terms):
+            return role
+        if role == "news_anchor_or_reporter" and _hits_any(author, terms):
+            return role
+    return "unknown"
+
+
+def _infer_recommended_usage(
+    source_kind: str, visual_role: str, profile: dict[str, Any]
+) -> str:
+    """A per-candidate ``main`` / ``supporting`` / ``optional`` **hint**.
+
+    ``optional`` when the profile does not welcome this source kind at all;
+    ``main`` when the visual role sits in the profile's main-role preference and
+    the role is actually known; otherwise ``supporting``.  This is a *hint* for
+    the delivery catalogue, not the final selection -- the selection layer still
+    applies budget and diversity rules.
+    """
+    preferred = profile.get("preferred_source_kinds") or ()
+    if preferred and source_kind not in preferred:
+        return "optional"
+    main_roles = profile.get("main_roles") or ()
+    if visual_role != "unknown" and visual_role in main_roles:
+        return "main"
+    return "supporting"
+
+
+def _infer_rights_status(source_authority: str) -> str:
+    """``rights_status`` -- the two facts are never merged into one field.
+
+    A third-party source (official / news / creator) still needs a redistribution
+    review, so it is ``review_required``; an unidentified one is ``unknown``.
+    Nothing here ever yields "authorized" or "public_domain": looking official is
+    not being licensed.
+    """
+    return "unknown" if source_authority == "unknown" else "review_required"
+
+
+def infer_material_labels(
+    *,
+    source: str = "",
+    title: str = "",
+    author: str = "",
+    profile: dict[str, Any],
+) -> dict[str, str]:
+    """Deterministic, audit-friendly source/role labels for one candidate.
+
+    Inputs are exactly the candidate's platform/source, title and author plus the
+    already-resolved ``profile`` (see :func:`resolve_material_profile`).  Returns a
+    fresh dict with ``source_kind`` / ``source_authority`` / ``visual_role`` /
+    ``recommended_usage`` / ``rights_status``, each drawn from the canonical
+    vocabularies above; anything unidentifiable degrades to ``unknown`` and no
+    material is ever assumed official or licensed.
+    """
+    prof = profile if isinstance(profile, dict) else {}
+    kind = _infer_source_kind(source, title, author, prof)
+    authority = _KIND_AUTHORITY.get(kind, "unknown")
+    role = _infer_visual_role(title, author, prof)
+    return {
+        "source_kind": kind,
+        "source_authority": authority,
+        "visual_role": role,
+        "recommended_usage": _infer_recommended_usage(kind, role, prof),
+        "rights_status": _infer_rights_status(authority),
+    }
+
+
+def material_labels_for(
+    theme: str,
+    *,
+    source: str = "",
+    title: str = "",
+    author: str = "",
+    config: dict[str, Any],
+) -> dict[str, str]:
+    """Convenience wrapper: resolve the theme's profile, then label one candidate."""
+    return infer_material_labels(
+        source=source,
+        title=title,
+        author=author,
+        profile=resolve_material_profile(theme, config),
+    )

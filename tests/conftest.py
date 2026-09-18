@@ -50,7 +50,7 @@ _GUARDED_MODULE_PREFIXES = ("test_replication_", "test_face_metrics")
 # test_replication_selection.py / test_replication_cli.py).
 _OPT_IN_MATERIAL_SWITCHES = (
     "relevance_gate", "visual_verify", "dedup_across_runs", "theme_event_terms", "direct_delivery",
-    "sources", "source_duration_windows",
+    "sources", "source_duration_windows", "theme_material_profiles", "theme_profile_map",
 )
 
 # Same contract, one level deeper: switches that live under
@@ -83,6 +83,7 @@ def _strip_opt_in_material_switches(payload: dict) -> dict:
             block = material.get(name)
             if isinstance(block, dict):
                 block["enabled"] = False
+                block.pop("ledger_root", None)
     return payload
 
 # Repository root: the directory that contains ``tests/``.

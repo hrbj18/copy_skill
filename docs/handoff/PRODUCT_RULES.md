@@ -32,12 +32,14 @@
 
 ## Material replication workflow
 
-- Theme → 3~6 in-domain keywords; folder `MM.DD<主题>复刻视频` (month not zero-padded, theme sanitized ≤12 chars) published atomically, never half-overwritten.
+- Theme → 3~6 in-domain keywords; folder `MM.DD<主题>复刻视频` (month not zero-padded, theme sanitized ≤12 chars) published atomically, never half-overwritten. Every folder carries a human `汇报文档.md` (`AGENTS.md`).
 - The signed `video_download_url` is captured in memory before sanitization and never persisted; the pool keeps only `video_id`/`share_url`/`media_url_present`.
 - `heat_score` = pool-normalized `digg+3*comment+5*share+4*collect` (+0.05*play when present); ties break by `(-score,-duration,video_id)`.
 - Script replica: exactly one, top-10% heat (≥Top5), 30~300s, ASR ≥150 chars at ≥1.2 chars/s, face-gate exempt.
-- Material replicas: 2~4 different-author clips, 15~180s, heat ≥ pool median, low speech, motion or low OCR coverage, `face_class ∈ {face_free, low_face}`; main must be `face_free`; delivered `face_heavy` = 0.
-- Face detection is existence-only (no embeddings/crops/identity); clips are 3~8s face-free intervals via `ffmpeg -c copy`; missing ffmpeg/backend degrades with warnings, never crashes. Manifests always carry `evidence_disclaimer`.
+- Material replicas keep theme subject terms, freshness, technical validity, duplicate control and low-speech / visual checks as admission gates. Within that qualified pool, ordering is deterministic: theme hit → event directness → profile source/role bonus → heat → duration → `video_id`; author diversity remains and source diversity is a soft preference. `face_class` is descriptive only (never admission/main/legality), so `face_heavy`, hosts, interviewees and event subjects may ship.
+- Theme, not source kind, comes first. Three explicit profiles (`person_or_company_event`, `official_notice_or_security_event`, `product_or_industry_trend`) choose source/role preferences without altering theme keywords, subject terms or event terms. `official_original` earns a bonus, yet hot on-theme `creator_commentary` can be main.
+- Slice delivery uses deterministic 3~8s source-timeline intervals rather than face-free intervals, preventing a themed news/interview segment from being silently erased because people are on screen. Face detection remains existence-only: no embeddings, crops or identity storage.
+- Deliveries add `00-素材目录.json`: one safe relative-path row per physical `02-主素材` / `03-辅助素材` entity, containing bytes, public candidate provenance, deterministic source/role/rights labels, score, duration and `face_class`. Signed download URLs, absolute / `..` paths, duplicate entities and uncovered manifest media fail validation. The complete folder caps at `200,000,000 bytes` and is blocked pre-publish. Multi-source resolve exists (`CompositeMediaResolver`); the former gap was labels, not dispatch.
 
 ## Resource and lifecycle guarantees
 

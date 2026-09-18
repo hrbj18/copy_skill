@@ -10,16 +10,19 @@ Two root-cause fixes, each with its own falsifiable test:
   there.  The slicing path (non direct) is untouched: there 04-原片 holds the real
   source, so it is not redundant.
 
-* The user's spec is a **delivery directory totalling 70~150 MB**.  No existing
-  gate measured that whole: ``material_replica.delivered_bytes`` counts only
-  02/03 and the old budget test measured only 04-原片 -- each blind to the other
-  half, so a doubled folder shipped silently.  The pipeline now records
+* The user's spec is a **delivery directory totalling 200,000,000 bytes**.  No
+  existing gate measured that whole: ``material_replica.delivered_bytes`` counts
+  only 02/03 and the old budget test measured only 04-原片 -- each blind to the
+  other half, so a doubled folder shipped silently.  The pipeline now records
   ``manifest["delivery_folder"]["delivery_folder_bytes"]`` (every file, summed)
-  and degrades when it exceeds 150 MiB.  The gate test below proves the measure
-  is *not* a tautology by tripping it with a genuinely over-size folder.
+  and, when it exceeds the cap, **refuses to publish** the folder
+  (:class:`DeliveryFolderOverLimit`) instead of degrading-and-shipping it.
 
 These tests opt into ``direct_delivery`` explicitly; ``tests/conftest.py`` strips
 it from the live fixture, so nothing here depends on the shipped switch.
+
+Every delivery also carries ``00-素材目录.json`` (the downstream selection
+contract); the full-chain case below pins its completeness and byte fidelity.
 """
 
 from __future__ import annotations
@@ -27,6 +30,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
+from douyin_intelligence.replication_delivery import (
+    CATALOG_NAME,
+    DeliveryFolderOverLimit,
+    validate_delivery_manifest,
+)
 from douyin_intelligence.config import load_config
 from douyin_intelligence.replication_pipeline import ReplicationDeps, run_material_replication
 from douyin_intelligence.replication_selection import VisualMetrics
@@ -227,38 +237,32 @@ def test_non_direct_mode_keeps_source_videos_and_no_index(tmp_path: Path, monkey
 
 
 # =========================================================================== #
-# (c) the size gate measures the *whole* folder and is not a tautology
+# (c) the size gate measures the *whole* folder and is a hard cap
 # =========================================================================== #
-def test_delivery_folder_bytes_is_not_a_tautology_over_limit_degrades(tmp_path: Path) -> None:
-    """A folder genuinely over 150 MiB must flip ``degraded`` and warn with the value."""
-    # Two whole files of ~79 MiB = ~158 MiB in 04-原片 alone -> the delivery folder
-    # is over the 150 MiB ceiling by construction.
+def test_over_limit_delivery_is_refused_not_published(tmp_path: Path) -> None:
+    """A folder over the 200,000,000-byte cap is refused, never published.
+
+    Two whole files of ~105 MiB = ~210 MiB in 04-原片 alone -> over the cap by
+    construction.  The cap is *hard*: the pipeline raises before publication, so
+    the destination tree is never created (atomicity preserved).
+    """
     rows = [_row("v0000", "作者A"), _row("v0001", "作者B")]
-    sizes = {"v0000": 79 * MiB, "v0001": 79 * MiB}
+    sizes = {"v0000": 105 * MiB, "v0001": 105 * MiB}
     config = _config(tmp_path, direct=False, keep_source=True)
 
-    result = run_material_replication(
-        config, "苹果折叠屏手机", business_date="2026-09-12", download_only=True,
-        deps=ReplicationDeps(collector=_collector(rows), downloader=_sized_downloader(sizes), prober=_prober),
-    )
-    output_dir = Path(result["output_dir"])
-    manifest = json.loads((output_dir / MANIFEST).read_text(encoding="utf-8"))
-
-    measured = manifest["delivery_folder"]["delivery_folder_bytes"]
-    assert measured > 157286400, measured
-    assert manifest["degraded"] is True
-    assert result["degraded"] is True  # the run-level flag agrees
-    warnings = " ".join(manifest["warnings"])
-    assert "交付目录合计超限" in warnings
-    # The warning must carry the *actual* measured value, not a placeholder.
-    assert str(measured) in warnings, warnings
-    # And the whole-folder measure must be strictly larger than 04-原片 alone
-    # (proving it is not just reading one sub-folder).
-    source_only = sum(p.stat().st_size for p in (output_dir / SOURCE_DIR).glob("*") if p.is_file())
-    assert measured > source_only
+    with pytest.raises(DeliveryFolderOverLimit) as captured:
+        run_material_replication(
+            config, "苹果折叠屏手机", business_date="2026-09-12", download_only=True,
+            deps=ReplicationDeps(collector=_collector(rows), downloader=_sized_downloader(sizes), prober=_prober),
+        )
+    message = str(captured.value)
+    assert "超过上限" in message
+    assert "200000000" in message
+    # Nothing was published: the delivery folder name never appears under the root.
+    assert list(tmp_path.rglob("9.12苹果折叠屏复刻视频")) == []
 
 
-def test_delivery_folder_bytes_within_limit_does_not_degrade_and_is_exact(tmp_path: Path) -> None:
+def test_delivery_folder_bytes_within_limit_publishes_and_is_exact(tmp_path: Path) -> None:
     """A small folder stays green, and the recorded byte count equals the real total."""
     rows = [_row("v0000", "作者A"), _row("v0001", "作者B")]
     sizes = {"v0000": MiB, "v0001": MiB}
@@ -272,10 +276,43 @@ def test_delivery_folder_bytes_within_limit_does_not_degrade_and_is_exact(tmp_pa
     manifest = json.loads((output_dir / MANIFEST).read_text(encoding="utf-8"))
 
     measured = manifest["delivery_folder"]["delivery_folder_bytes"]
-    assert measured <= 157286400
+    assert measured <= 200_000_000
     assert manifest["degraded"] is False
     assert result["degraded"] is False
     assert not any("交付目录合计超限" in w for w in manifest["warnings"])
     # Exact: the recorded number is the on-disk total of *every* file in the
     # published folder (publish is a rename, so the bytes are preserved).
     assert measured == _delivery_folder_bytes(output_dir)
+
+
+# =========================================================================== #
+# (d) the material catalog is complete and byte-faithful on a full-chain run
+# =========================================================================== #
+def test_full_chain_delivery_writes_a_complete_material_catalog(tmp_path: Path, monkeypatch) -> None:
+    _healthy_tooling(monkeypatch)
+    rows = [_row(f"v{index:02d}", f"作者{index}") for index in range(3)]
+    config = _config(tmp_path, direct=True, keep_source=True)
+
+    result = run_material_replication(
+        config, "苹果折叠屏手机", business_date="2026-09-12", deps=_full_chain_deps(rows),
+    )
+    output_dir = Path(result["output_dir"])
+    catalog = json.loads((output_dir / CATALOG_NAME).read_text(encoding="utf-8"))
+    manifest = json.loads((output_dir / MANIFEST).read_text(encoding="utf-8"))
+
+    listed = sorted(entry["file_path"] for entry in catalog["entries"])
+    delivered = sorted(
+        record["file"] for record in [*manifest["main_materials"], *manifest["supporting_materials"]]
+    )
+    assert listed == delivered and listed, "目录必须与清单实体逐一对应"
+    assert catalog["count"] == len(listed)
+    for entry in catalog["entries"]:
+        assert entry["file_path"].startswith((f"{MAIN_DIR}/", f"{SUPPORT_DIR}/"))
+        assert (output_dir / entry["file_path"]).stat().st_size == entry["file_bytes"]
+        assert entry["source_url"].startswith("https://www.douyin.com/video/")
+        assert entry["author"] and entry["title"] and entry["material_id"]
+        assert entry["file_bytes"] > 0
+    # Direct mode ships each source once into 02/03 and 04-原片 keeps only the
+    # index, so no entity is duplicated across folders.
+    assert list((output_dir / SOURCE_DIR).glob("*.mp4")) == []
+    assert validate_delivery_manifest(output_dir / MANIFEST)["status"] == "pass"

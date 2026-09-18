@@ -5,7 +5,7 @@
     "AGENTS.md": 8000,
     "docs/handoff/README.md": 1200,
     "docs/handoff/CURRENT_STATUS.md": 3000,
-    "docs/handoff/PRODUCT_RULES.md": 5000,
+    "docs/handoff/PRODUCT_RULES.md": 6000,
     "docs/handoff/DECISIONS.md": 6000,
     "docs/handoff/CODE_MAP.md": 5000,
     "docs/handoff/RUNTIME_SAFETY.md": 5000
@@ -20,5 +20,5 @@
   "forbidden_context_inputs": [
     "docs/项目开发过程文档.md"
   ],
-  "current_task": "docs/tasks/2026-09-16-episode-research-pack-v1.md"
+  "current_task": "docs/tasks/2026-09-18-material-acquisition-strategy-v1.md"
 }

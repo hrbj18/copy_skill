@@ -1,6 +1,6 @@
 # Project handoff router
 
-Current task: `docs/tasks/2026-09-16-episode-research-pack-v1.md`.
+Current task: `docs/tasks/2026-09-18-material-acquisition-strategy-v1.md`.
 
 Read order for a new task:
 
@@ -16,3 +16,5 @@ Read order for a new task:
 Do not read `docs/项目开发过程文档.md`, restore interrupted Codex conversations, scan every old task guide, or load the whole repository to recover context. Old task guides are historical unless this file names one as current.
 
 Audit: `python scripts/audit_handoff.py --root .`
+
+Before declaring any delivery complete, follow the mandatory delivery-documentation rule in `AGENTS.md`.

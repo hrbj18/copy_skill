@@ -12,6 +12,7 @@ import inspect
 import re
 import statistics
 import subprocess
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -19,9 +20,6 @@ from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 from .face_metrics import (
-    FACE_FREE,
-    FACE_HEAVY,
-    FACE_LOW,
     FACE_UNAVAILABLE,
     face_settings,
     imread_unicode,
@@ -50,7 +48,6 @@ if TYPE_CHECKING:  # pragma: no cover - typing only, avoids an import cycle
 
 
 MEDIA_PROCESS_TIMEOUT_SECONDS = 180
-_FACE_PRIORITY = {FACE_FREE: 0, FACE_LOW: 1, FACE_HEAVY: 2, FACE_UNAVAILABLE: 3}
 
 
 def _run_media_process(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -918,6 +915,111 @@ def ranked_candidates(
     )
 
 
+#: Weight of one step down a profile's ``preferred_source_kinds`` / ``main_roles``
+#: ranking.  Deliberately small: the *explicit* ``original_source_bonus`` must
+#: dominate an ordering position, and the step only ever breaks near-ties.
+MATERIAL_PROFILE_BONUS_STEP = 0.01
+
+
+def _profile_metric(value: Any) -> float:
+    """A profile number, or ``0.0`` when absent/malformed (never raises)."""
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _profile_rank(value: str, ranked: Any) -> float:
+    """Bonus for ``value`` sitting early in a profile's ranked vocabulary.
+
+    ``0.0`` when ``value`` is empty, ``ranked`` is not a list/tuple, or ``value``
+    is absent -- so an unknown label never scores, it merely stays unranked.
+    """
+    if not value or not isinstance(ranked, (list, tuple)):
+        return 0.0
+    try:
+        index = ranked.index(value)
+    except ValueError:
+        return 0.0
+    return MATERIAL_PROFILE_BONUS_STEP * (len(ranked) - index)
+
+
+def material_profile_bonus(labels: Any, profile: Any) -> float:
+    """Deterministic source/role bonus for one candidate, from its material labels.
+
+    The integration point with the theme-profile layer
+    (``replication_theme.resolve_material_profile`` / ``infer_material_labels``).
+    ``profile`` is the resolved profile mapping and ``labels`` that candidate's
+    label mapping; both may be ``None``, in which case the bonus is ``0.0`` and
+    the ordering falls back to theme/event hits, heat, duration and ``video_id``.
+
+    Only **explicit** profile facts contribute (higher = preferred):
+
+    * ``original_source_bonus`` for an ``official_original`` source -- the single
+      documented "original source" credit;
+    * a small step per position in ``preferred_source_kinds``;
+    * a small step per position in ``main_roles``.
+
+    Nothing is inferred from a name that merely *sounds* official, and an
+    unidentified candidate keeps the rest of the key unchanged.  A creator
+    commentary clip is therefore never hard-displaced -- it only loses a small
+    tie-breaker -- which is exactly the "official is a bonus, not an admission
+    requirement" rule of the 2026-09-18 guide.
+    """
+    if not isinstance(labels, Mapping) or not isinstance(profile, Mapping):
+        return 0.0
+    kind = str(labels.get("source_kind") or "")
+    role = str(labels.get("visual_role") or "")
+    bonus = 0.0
+    if kind == "official_original":
+        bonus += _profile_metric(profile.get("original_source_bonus"))
+    bonus += _profile_rank(kind, profile.get("preferred_source_kinds"))
+    bonus += _profile_rank(role, profile.get("main_roles"))
+    return bonus
+
+
+def material_rank_key(
+    candidate: Candidate,
+    probe: Mapping[str, Any] | None = None,
+    *,
+    theme_terms: Sequence[str] | None = None,
+    event_terms: Sequence[str] | None = None,
+    labels: Mapping[str, Any] | None = None,
+    profile: Mapping[str, Any] | None = None,
+) -> tuple[Any, ...]:
+    """Explainable, stable material ordering key: theme hits, event hits, profile
+    source/role bonus, weighted heat, duration, ``video_id``.  A profile's
+    explicit ``event_term_weight`` and ``heat_weight`` scale only their own
+    components; absent/invalid values fall back to ``1.0``.
+
+    Replaces the old face-first ordering (``_FACE_RANK`` of the pipeline).
+    ``face_class`` is descriptive metadata only after 2026-09-18 -- a themed run
+    may legitimately want a host, an interview or an on-site recording on screen
+    -- so no face term appears here.  Every component is a field the run already
+    carries (title, ``heat_score``, the probed duration, ``video_id``) plus the
+    profile source/role term (:func:`material_profile_bonus`, ``0.0`` when no
+    profile/labels are supplied).  The tie-break on ``video_id`` ascending makes
+    the order total and reproducible; ``probe`` is read through ``.get`` so a
+    missing/odd payload degrades to duration ``0`` instead of raising.
+    """
+    title_folded = str(getattr(candidate, "title", "") or "").casefold()
+    theme_hits = sum(1 for term in (theme_terms or []) if term_hits_title(term, title_folded))
+    event_hits = sum(1 for term in (event_terms or []) if term_hits_title(term, title_folded))
+    profile_payload = profile if isinstance(profile, Mapping) else {}
+    event_weight = _profile_metric(profile_payload.get("event_term_weight")) or 1.0
+    heat_weight = _profile_metric(profile_payload.get("heat_weight")) or 1.0
+    probe_payload = probe if isinstance(probe, Mapping) else {}
+    duration = float(probe_payload.get("duration_seconds") or 0.0)
+    return (
+        -theme_hits,
+        -(event_hits * event_weight),
+        -material_profile_bonus(labels, profile),
+        -(float(getattr(candidate, "heat_score", 0.0) or 0.0) * heat_weight),
+        -duration,
+        str(getattr(candidate, "video_id", "") or ""),
+    )
+
+
 @dataclass(slots=True)
 class DownloadBudget:
     """A run-wide cap on downloads, shared by every download loop.
@@ -1696,14 +1798,16 @@ def select_material_replicas(
     theme: str | None = None,
     resolver: "MediaResolver | None" = None,
 ) -> dict[str, Any]:
-    """Select 2~4 low-speech, face-acceptable, deduplicated material videos.
+    """Select 2~4 low-speech, deduplicated material videos.
 
     Every dropped candidate is recorded in ``unmet`` as a structured
     ``{"video_id", "stage", "reason"}`` entry so an empty/insufficient material
     set is fully attributable downstream.  ``stage`` is one of ``pool``,
     ``relevance``, ``not_video``, ``cross_run_duplicate``, ``stale``,
     ``duration_pre``, ``author_duplicate``, ``invalid_media``, ``validation``,
-    ``duration``, ``face``, ``visual``, ``speech`` or ``quota``.
+    ``duration``, ``visual``, ``speech`` or ``quota``.  Face class is
+    **descriptive only** (2026-09-18): it is computed and carried on every
+    selected row but never admits or refuses a candidate.
 
     ``theme`` enables the **relevance gate** (opt-in, see below): it must be the
     same theme the pool was collected for.  ``None`` -- the pre-gate behaviour --
@@ -1864,7 +1968,6 @@ def select_material_replicas(
     delivered_bytes = 0
     face_checked = 0
     face_errors = 0
-    rejected_face_heavy = 0
     rejected_duration = 0
     invalid_media = 0
     rejected_pool = 0
@@ -2158,8 +2261,9 @@ def select_material_replicas(
             face = face_runner.run(video_path, duration, cache_dir / "face", temp_dir / "face")
             face_checked += 1
             # A severely truncated sample (covers < half the clip) must not be
-            # read as a trustworthy ``face_free`` verdict -- downgrade it before
-            # the class gate can act on it.
+            # read as a trustworthy ``face_free`` verdict, so downgrade it.  The
+            # class is descriptive metadata now (see below), yet the honest label
+            # still matters for the delivery/catalogue.
             face = truncated_face_class(face)
             face_status_value = face.get("status")
             if face_status_value is not None and str(face_status_value) != "ok":
@@ -2170,20 +2274,12 @@ def select_material_replicas(
             transcript = transcriber.run(video_path, cache_dir / "asr", temp_dir / "asr")
             rate = speech_rate(transcript, duration)
             face_class = str(face.get("face_class") or FACE_UNAVAILABLE)
-            if face_class not in {FACE_FREE, FACE_LOW}:
-                rejected_face_heavy += 1
-                unmet.append({
-                    "video_id": candidate.video_id,
-                    "stage": "face",
-                    "reason": f"人脸分级 {face_class}（非 face_free/low_face）",
-                    "face_class": face_class,
-                    "face_class_reason": str(face.get("face_class_reason") or ""),
-                    "truncated": bool(face.get("truncated", False)),
-                    "expected_frames": face.get("expected_frames"),
-                    "emitted_frames": face.get("emitted_frames"),
-                    "sample_coverage": face.get("sample_coverage"),
-                })
-                continue
+            # Face class is **descriptive only** after 2026-09-18: a themed run may
+            # legitimately need footage with people in it (a host, an interview,
+            # an on-site recording), so ``face_class`` no longer admits or refuses
+            # a candidate.  It is still computed and carried on every selected row
+            # (``material_replica_sources`` / clip metadata / 00-素材目录.json) so a
+            # reader can always see what shipped.
             if not visual.visual_ok:
                 rejected_visual += 1
                 unmet.append({
@@ -2292,7 +2388,10 @@ def select_material_replicas(
         "downloaded": downloaded,
         "face_checked": face_checked,
         "face_errors": face_errors,
-        "clips_rejected_face_heavy": rejected_face_heavy,
+        # Kept at ``0`` for manifest-key compatibility: face class no longer
+        # rejects anything (2026-09-18), so nothing can be counted here.  The
+        # descriptive distribution is on ``material_replica_sources`` instead.
+        "clips_rejected_face_heavy": 0,
         "clips_rejected_duration": rejected_duration,
         "rejected_duration_post": rejected_duration_post,
         "rejected_not_video": rejected_not_video,

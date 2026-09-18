@@ -11,8 +11,9 @@ Three things must hold, and each is a separate failure mode:
   classification silently degrades to "longest first" and nobody notices);
 * a malformed or absent table yields ``[]`` (otherwise the classification would
   depend on whatever happened to be in the config);
-* the two face rules in ``validate_delivery_manifest`` are waived **only** in
-  direct mode (otherwise the waiver would silently weaken every other delivery).
+* ``face_class`` is **not** a delivery gate in any mode (2026-09-18 strategy
+  §3.3): the historic "face_heavy error" / "main must be face_free" rules are
+  gone, so a ``face_heavy`` main material is legal with or without the switch.
 """
 
 from __future__ import annotations
@@ -106,17 +107,17 @@ def _manifest(tmp_path: Path, *, direct: bool) -> Path:
     return path
 
 
-def test_face_rules_apply_when_direct_delivery_is_absent(tmp_path: Path) -> None:
-    verdict = validate_delivery_manifest(_manifest(tmp_path, direct=False))
-    assert verdict["status"] == "fail"
-    assert any("face_heavy" in err for err in verdict["errors"])
-    assert any("非 face_free" in err for err in verdict["errors"])
+def test_face_is_not_a_delivery_gate_in_either_mode(tmp_path: Path) -> None:
+    """``face_heavy`` main material is legal now -- face is descriptive only.
 
-
-def test_face_rules_are_waived_in_direct_mode(tmp_path: Path) -> None:
-    """An interview has its subject on camera; that is the point of opting in."""
-    verdict = validate_delivery_manifest(_manifest(tmp_path, direct=True))
-    assert verdict["status"] == "pass", verdict["errors"]
+    A full interview has its subject on camera; that used to fail the delivery
+    outside direct mode and pass only inside it.  The rules are gone entirely, so
+    the same manifest validates with the switch off *and* on.
+    """
+    for direct in (False, True):
+        verdict = validate_delivery_manifest(_manifest(tmp_path, direct=direct))
+        assert verdict["status"] == "pass", (direct, verdict["errors"])
+        assert not any("face" in error for error in verdict["errors"]), verdict["errors"]
 
 
 def test_direct_delivery_table_is_registered_in_the_sources_it_touches() -> None:

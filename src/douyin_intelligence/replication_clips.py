@@ -61,6 +61,37 @@ def remove_tree(path: Path) -> None:
         pass
 
 
+def derive_clip_intervals(
+    duration: float,
+    *,
+    min_seconds: float = 3.0,
+    max_seconds: float = 8.0,
+) -> list[ClipInterval]:
+    """Split a source timeline into deterministic, bounded material intervals.
+
+    The material-acquisition policy treats ``face_class`` as descriptive metadata,
+    not an eligibility condition.  Slice-mode deliveries therefore cannot derive
+    intervals from face-free samples: doing so would silently remove reporters,
+    interviewees and event subjects even after the upstream face gate was removed.
+    This planner covers the source timeline in chunks of ``max_seconds`` and only
+    emits a final remainder when it reaches ``min_seconds``.
+    """
+    total = max(0.0, float(duration))
+    minimum = max(0.0, float(min_seconds))
+    maximum = max(0.0, float(max_seconds))
+    if total <= 0 or maximum <= 0 or maximum < minimum:
+        return []
+    intervals: list[ClipInterval] = []
+    cursor = 0.0
+    while total - cursor >= minimum - 1e-9:
+        end = min(total, cursor + maximum)
+        if end - cursor < minimum - 1e-9:
+            break
+        intervals.append(ClipInterval(round(cursor, 3), round(end, 3)))
+        cursor = end
+    return intervals
+
+
 def derive_face_free_intervals(
     face_per_frame: list[bool],
     duration: float,
@@ -69,7 +100,12 @@ def derive_face_free_intervals(
     max_seconds: float = 8.0,
     interval_seconds: float = 1.0,
 ) -> list[ClipInterval]:
-    """Turn per-frame face flags into 3~8s face-free clip intervals."""
+    """Legacy face-free interval helper retained for non-delivery callers.
+
+    Material replication no longer calls this helper: its output is not a valid
+    selection policy once a presenter, interviewee or news subject may be the
+    desired footage.
+    """
     intervals: list[ClipInterval] = []
     total = max(0.0, float(duration))
     step = float(interval_seconds)

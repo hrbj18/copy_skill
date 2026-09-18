@@ -12,9 +12,10 @@ import os
 import re
 import time
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
+from urllib.parse import urlparse
 
-from .face_metrics import FACE_FREE, FACE_HEAVY
+from .exporter import atomic_write_json
 from .replication_clips import remove_tree
 
 
@@ -27,6 +28,12 @@ FOLDER_SOURCE = "04-原片"
 FOLDER_PROCESS = "05-过程数据"
 DELIVERY_README = "00-交付说明.md"
 
+#: Machine-readable material catalog (downstream selection contract).  It sits
+#: beside the manifest and, unlike ``清单.json``, lists one row per *physical*
+#: media file with the provenance/tag/score a downstream picker needs.
+CATALOG_SCHEMA_VERSION = 1
+CATALOG_NAME = "00-素材目录.json"
+
 # ``direct_delivery`` (opt-in) ships each selected source as a whole file into
 # 02/03, so a *second* copy of the same file in 04-原片 would double the delivery's
 # bytes for zero new information.  In that mode 04-原片 carries these two index
@@ -36,11 +43,12 @@ DELIVERY_README = "00-交付说明.md"
 SOURCE_INDEX_NAME = "原片索引.json"
 SOURCE_INDEX_README = "原片索引.md"
 
-# The user's stated ceiling for a delivery directory is 70~150 MB.  The gate in
-# ``replication_pipeline`` fails a run whose *whole* delivery folder exceeds this,
-# so a duplication regression (or any other size blow-up) becomes visible in the
-# run itself instead of silently shipping an over-size folder.
-MAX_DELIVERY_FOLDER_BYTES = 157286400  # 150 MiB
+# The user's stated ceiling for a delivery directory is 200,000,000 bytes
+# (2026-09-18 acquisition strategy, §3.5).  It is a *hard* cap: the gate in
+# ``replication_pipeline`` refuses to publish a run whose whole delivery folder
+# exceeds it, so a size blow-up can never ship silently.  The catalog's own
+# ``max_total_bytes`` uses the same value.
+MAX_DELIVERY_FOLDER_BYTES = 200_000_000
 
 DISCLAIMER = "抖音素材仅为发现与关注度证据，不得作为事实依据；人脸指标为自动检测结果，交付前需人工复核。"
 
@@ -50,6 +58,41 @@ REQUIRED_MANIFEST_KEYS = (
     "supporting_materials", "counters", "face_backend", "face_backend_status", "ffmpeg_status",
     "degraded", "insufficient", "warnings", "evidence_disclaimer",
 )
+
+#: Deterministic, auditable label vocabularies for the catalog (2026-09-18
+#: strategy §3.3).  ``unknown`` is legal in every set: a value that cannot be
+#: judged must degrade honestly instead of inventing official authority.
+SOURCE_KINDS = ("official_original", "news_broadcast", "creator_commentary", "platform_video", "unknown")
+SOURCE_AUTHORITIES = ("official", "news_media", "creator", "unknown")
+VISUAL_ROLES = (
+    "event_direct", "subject_person", "product_or_scene",
+    "news_anchor_or_reporter", "commentary", "unknown",
+)
+RECOMMENDED_USAGES = ("main", "supporting", "optional")
+RIGHTS_STATUSES = (
+    "unknown", "review_required", "reference_only",
+    "renderable_with_attribution", "project_generated",
+)
+
+CATALOG_REQUIRED_KEYS = (
+    "schema_version", "theme", "folder", "generated_at",
+    "max_total_bytes", "total_bytes", "count", "entries",
+)
+
+CATALOG_ENTRY_KEYS = (
+    "material_id", "file_path", "role", "recommended_usage", "source_url", "title", "author",
+    "source_kind", "source_authority", "visual_role", "rights_status",
+    "relevance_score", "heat_score", "duration_seconds", "file_bytes", "face_class",
+)
+
+
+class DeliveryFolderOverLimit(RuntimeError):
+    """The staged delivery folder exceeds :data:`MAX_DELIVERY_FOLDER_BYTES`.
+
+    Raised *before* publication, so the stage is left intact for inspection but
+    no over-size delivery is ever published (and the destination tree is never
+    half-overwritten).
+    """
 
 
 def evidence_disclaimer() -> str:
@@ -82,6 +125,283 @@ def delivery_folder_bytes(root: Path) -> int:
         except OSError:
             continue
     return total
+
+
+# --------------------------------------------------------------------------- #
+# 00-素材目录.json -- the machine-readable material catalog (strategy §3.4)
+# --------------------------------------------------------------------------- #
+def _safe_relative_path(value: Any) -> str | None:
+    """Normalize a delivery-relative POSIX path, or ``None`` when it is unsafe.
+
+    A catalog ``file_path`` must be relative to the delivery root and must not
+    escape it: an absolute path (``C:\\…`` / ``/…``) leaks the machine layout and a
+    ``..`` segment can point *outside* the delivery.  Both are rejected rather
+    than silently normalized, so tampering is visible instead of absorbed.
+    """
+    text = str(value or "").strip().replace("\\", "/")
+    if not text:
+        return None
+    if text.startswith("/") or re.match(r"^[A-Za-z]:", text):
+        return None
+    parts = [part for part in text.split("/") if part not in ("", ".")]
+    if not parts or any(part == ".." for part in parts):
+        return None
+    return "/".join(parts)
+
+
+#: Media-CDN hosts and signing query keys ByteDance's CDNs actually use.  Kept
+#: deliberately narrow so a normal share link (``https://www.douyin.com/video/…``)
+#: is never misread as a signed download URL.
+_SIGNED_HOST_SUFFIXES = (
+    "douyinvod.com", "snssdk.com", "byteimg.com", "douyinpic.com",
+    "douyincdn.com", "ixigua.com", "pstatp.com", "bytedance.com",
+)
+_SIGNED_QUERY_MARKERS = (
+    "x-expires", "x-expire", "expires=", "ossexpires", "ossaccesskeyid",
+    "signature=", "x-signature", "a_bogus", "x-bogus", "ms_token",
+    "sessionid=", "session_key", "auth_key", "authkey", "token=", "ttl=",
+    "policy=", "sig=", "secret=",
+)
+
+
+def is_signed_download_url(url: Any) -> bool:
+    """True when ``url`` looks like a *signed* (temporary, credentialed) media URL.
+
+    The catalog's ``source_url`` must be the candidate's public share page; a
+    signed download URL carries temporary credentials and must never be published
+    into a delivery (strategy §3.4).  ``""`` (unknown) is not a violation.
+    """
+    text = str(url or "").strip()
+    if not text:
+        return False
+    parsed = urlparse(text)
+    host = (parsed.hostname or "").lower()
+    if any(host == suffix or host.endswith("." + suffix) for suffix in _SIGNED_HOST_SUFFIXES):
+        return True
+    query = (parsed.query or "").lower()
+    return any(marker in query for marker in _SIGNED_QUERY_MARKERS)
+
+
+def _as_number(value: Any) -> float | None:
+    """``float`` for a real number, ``None`` for anything else (bool excluded)."""
+    if isinstance(value, bool):
+        return None
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _normalized_label(value: Any, allowed: tuple[str, ...], default: str) -> str:
+    text = str(value or "").strip()
+    return text if text in allowed else default
+
+
+def _catalog_entry(
+    record: dict[str, Any],
+    *,
+    role: str,
+    index: int,
+    detail: dict[str, Any] | None,
+    root: Path | None,
+) -> dict[str, Any]:
+    """One catalog row for one physical media file.
+
+    Built from the manifest's main/support record (guaranteeing exact coverage)
+    plus optional ``detail`` provenance the pipeline knows at copy time.  Any
+    label that cannot be judged falls back to ``unknown`` (or
+    ``review_required`` for rights), never to an invented value.
+    """
+    info = dict(detail or {})
+    file_path = _safe_relative_path(record.get("file")) or str(record.get("file") or "")
+    usage = str(info.get("recommended_usage") or "")
+    if usage not in RECOMMENDED_USAGES:
+        usage = "main" if role == "main" else "supporting"
+    file_bytes = info.get("file_bytes")
+    if root is not None and file_path:
+        try:
+            file_bytes = (Path(root) / file_path).stat().st_size
+        except OSError:
+            pass
+    if not isinstance(file_bytes, (int, float)):
+        file_bytes = info.get("bytes") if isinstance(info.get("bytes"), (int, float)) else 0
+    duration = record.get("duration")
+    if not isinstance(duration, (int, float)):
+        duration = info.get("duration_seconds")
+    return {
+        "material_id": str(record.get("clip_id") or info.get("clip_id") or f"{role}-{index:02d}"),
+        "file_path": file_path,
+        "role": role,
+        "recommended_usage": usage,
+        "source_url": str(info.get("source_url") or ""),
+        "source_platform": str(info.get("source") or ""),
+        "title": str(info.get("title") or ""),
+        "author": str(info.get("author") or ""),
+        "video_id": str(info.get("video_id") or ""),
+        "source_kind": _normalized_label(info.get("source_kind"), SOURCE_KINDS, "unknown"),
+        "source_authority": _normalized_label(info.get("source_authority"), SOURCE_AUTHORITIES, "unknown"),
+        "visual_role": _normalized_label(info.get("visual_role"), VISUAL_ROLES, "unknown"),
+        "rights_status": _normalized_label(info.get("rights_status"), RIGHTS_STATUSES, "review_required"),
+        "relevance_score": _as_number(info.get("relevance_score")),
+        "heat_score": _as_number(info.get("heat_score")),
+        "duration_seconds": _as_number(duration) or 0.0,
+        "file_bytes": int(file_bytes or 0),
+        "face_class": str(record.get("face_class") or info.get("face_class") or "unknown"),
+        "suggested_use": str(record.get("suggested_use") or ""),
+    }
+
+
+def build_material_catalog(
+    *,
+    theme: str,
+    folder: str,
+    business_date: str,
+    generated_at: str,
+    main_materials: list[dict[str, Any]],
+    supporting_materials: list[dict[str, Any]],
+    details: dict[str, dict[str, Any]] | None = None,
+    root: Path | None = None,
+    max_total_bytes: int = MAX_DELIVERY_FOLDER_BYTES,
+) -> dict[str, Any]:
+    """Assemble the ``00-素材目录.json`` payload.
+
+    Rows come from the *same* ``main_materials`` / ``supporting_materials`` the
+    manifest carries, so the catalog can never list a file the manifest does not
+    (or miss one it does).  ``details`` maps a delivered relative path to the
+    provenance the pipeline knows when it copies the file (title, author,
+    ``source_url``, tags, scores).  ``root`` (the delivery root) lets ``file_bytes``
+    be read straight from disk so it equals the entity size by construction.
+    """
+    lookup = {str(key): dict(value) for key, value in (details or {}).items()}
+    entries: list[dict[str, Any]] = []
+    for index, record in enumerate(main_materials, start=1):
+        detail = lookup.get(str(record.get("file") or ""))
+        entries.append(_catalog_entry(record, role="main", index=index, detail=detail, root=root))
+    for index, record in enumerate(supporting_materials, start=1):
+        detail = lookup.get(str(record.get("file") or ""))
+        entries.append(_catalog_entry(record, role="support", index=index, detail=detail, root=root))
+    return {
+        "schema_version": CATALOG_SCHEMA_VERSION,
+        "theme": theme,
+        "folder": folder,
+        "business_date": business_date,
+        "generated_at": generated_at,
+        "max_total_bytes": int(max_total_bytes),
+        "total_bytes": sum(int(entry["file_bytes"]) for entry in entries),
+        "count": len(entries),
+        "entries": entries,
+    }
+
+
+def material_catalog_path(root: Path) -> Path:
+    return Path(root) / CATALOG_NAME
+
+
+def write_material_catalog(root: Path, catalog: dict[str, Any]) -> Path:
+    """Write the catalog atomically so a partial file can never be published."""
+    path = material_catalog_path(root)
+    atomic_write_json(path, catalog)
+    return path
+
+
+def validate_material_catalog(
+    path: Path,
+    *,
+    root: Path | None = None,
+    expected_files: Iterable[str] | None = None,
+    max_total_bytes: int = MAX_DELIVERY_FOLDER_BYTES,
+) -> dict[str, Any]:
+    """Self-contained catalog check: safe paths, real files, exact bytes, legality.
+
+    Verifies each entry's path is a safe delivery-relative path, that the file
+    exists and its size equals ``file_bytes``, that no physical file is listed
+    twice, that every label is within a legal vocabulary, that no ``source_url``
+    is a signed download URL, and that the catalog total is within the cap.
+    ``expected_files`` (the manifest's main/support files) makes the check
+    bidirectionally complete: nothing may be missing, nothing extra may appear.
+    """
+    target = Path(path)
+    errors: list[str] = []
+    try:
+        payload = json.loads(target.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"status": "fail", "path": str(target), "errors": [f"素材目录无法读取：{exc}"],
+                "count": 0, "total_bytes": 0, "files": []}
+    if not isinstance(payload, dict):
+        return {"status": "fail", "path": str(target), "errors": ["素材目录不是 JSON 对象"],
+                "count": 0, "total_bytes": 0, "files": []}
+    for key in CATALOG_REQUIRED_KEYS:
+        if key not in payload:
+            errors.append(f"素材目录缺少字段 {key}")
+    delivery_root = Path(root) if root is not None else target.parent
+    raw_entries = payload.get("entries")
+    if not isinstance(raw_entries, list):
+        errors.append("素材目录 entries 必须为列表")
+        raw_entries = []
+    seen: set[str] = set()
+    files: list[str] = []
+    total = 0
+    for position, entry in enumerate(raw_entries, start=1):
+        label = f"第 {position} 条"
+        if not isinstance(entry, dict):
+            errors.append(f"{label} 不是对象")
+            continue
+        for key in CATALOG_ENTRY_KEYS:
+            if key not in entry:
+                errors.append(f"{label} 缺少字段 {key}")
+        for key, allowed in (
+            ("source_kind", SOURCE_KINDS),
+            ("source_authority", SOURCE_AUTHORITIES),
+            ("visual_role", VISUAL_ROLES),
+            ("recommended_usage", RECOMMENDED_USAGES),
+            ("rights_status", RIGHTS_STATUSES),
+        ):
+            value = str(entry.get(key) or "")
+            if value not in allowed:
+                errors.append(f"{label} 的 {key}={value!r} 非法")
+        if not str(entry.get("material_id") or "").strip():
+            errors.append(f"{label} 缺少 material_id")
+        safe = _safe_relative_path(entry.get("file_path"))
+        if safe is None:
+            errors.append(f"{label} 的 file_path 不安全：{entry.get('file_path')!r}")
+            continue
+        if safe in seen:
+            errors.append(f"素材目录存在重复实体路径 {safe}")
+        seen.add(safe)
+        files.append(safe)
+        url = str(entry.get("source_url") or "")
+        if is_signed_download_url(url):
+            errors.append(f"{label} 的 source_url 为签名下载 URL，禁止写入：{url}")
+        entity = delivery_root / safe
+        if not entity.is_file():
+            errors.append(f"{label} 的实体文件不存在：{safe}")
+            continue
+        try:
+            actual = entity.stat().st_size
+        except OSError as exc:
+            errors.append(f"{label} 无法读取实体文件 {safe}：{exc}")
+            continue
+        recorded = entry.get("file_bytes")
+        if not isinstance(recorded, (int, float)) or int(recorded) != int(actual):
+            errors.append(f"{label} 的 file_bytes 与实体不符：记录 {recorded} / 实际 {actual}（{safe}）")
+        total += int(actual)
+    declared = payload.get("total_bytes")
+    if isinstance(declared, (int, float)) and int(declared) != total:
+        errors.append(f"素材目录 total_bytes 与实体合计不符：记录 {int(declared)} / 实际 {total}")
+    if total > int(max_total_bytes):
+        errors.append(f"素材目录实体合计 {total} 字节超过上限 {int(max_total_bytes)} 字节")
+    if expected_files is not None:
+        expected = {str(item) for item in expected_files}
+        listed = set(files)
+        for item in sorted(expected - listed):
+            errors.append(f"清单中的实体未列入素材目录：{item}")
+        for item in sorted(listed - expected):
+            errors.append(f"素材目录列出未交付实体：{item}")
+    return {
+        "status": "pass" if not errors else "fail",
+        "path": str(target.resolve()),
+        "errors": errors,
+        "count": len(raw_entries),
+        "total_bytes": total,
+        "files": files,
+    }
 
 
 def build_manifest(
@@ -165,7 +485,23 @@ def build_manifest(
 
 
 def validate_delivery_manifest(path: Path) -> dict[str, Any]:
-    """Self-contained manifest check (no network, no external tools)."""
+    """Self-contained manifest check (no network, no external tools).
+
+    Face is **not** a delivery gate any more (2026-09-18 strategy §3.3): a
+    ``face_heavy`` clip is legal material and ``face_class`` is descriptive only,
+    so the old "face_heavy error" / "main must be face_free" rules are gone.  In
+    their place the delivery must satisfy: a material catalog
+    (``00-素材目录.json``) that lists exactly the delivered main/support entities,
+    and a whole-folder byte total within :data:`MAX_DELIVERY_FOLDER_BYTES`.
+
+    A current pipeline delivery is required to carry the catalog.  The only
+    compatibility exception is an explicitly marked legacy/annotation manifest:
+    it has no ``delivery_folder`` block, because it was not produced by the
+    current publisher and therefore cannot satisfy the current physical-size
+    contract either.  This keeps old research-pack annotations readable without
+    allowing a newly published material delivery to silently omit its downstream
+    selection catalog.
+    """
     target = Path(path)
     errors: list[str] = []
     try:
@@ -177,20 +513,24 @@ def validate_delivery_manifest(path: Path) -> dict[str, Any]:
             errors.append(f"缺少字段 {key}")
     if not str(payload.get("evidence_disclaimer") or "").strip():
         errors.append("缺少 evidence_disclaimer")
-    clips = [*(payload.get("main_materials") or []), *(payload.get("supporting_materials") or [])]
-    # ``direct_delivery`` (opt-in, 2026-09-16) ships whole source files whose
-    # subject is on camera by definition -- a full interview, an on-site
-    # recording.  The operator opted in for exactly that, so the two face rules
-    # below are waived -- but *only* then: without the block the checks are
-    # unchanged, byte for byte.
-    direct_on = bool((payload.get("direct_delivery") or {}).get("enabled"))
-    for clip in clips:
-        if not direct_on and str(clip.get("face_class") or "") == FACE_HEAVY:
-            errors.append(f"片段 {clip.get('clip_id')} 为 face_heavy，违反人脸硬门槛")
-    if not direct_on:
-        for clip in payload.get("main_materials") or []:
-            if str(clip.get("face_class") or "") != FACE_FREE:
-                errors.append(f"主素材 {clip.get('clip_id')} 非 face_free")
+    recorded_total = (payload.get("delivery_folder") or {}).get("delivery_folder_bytes")
+    if isinstance(recorded_total, (int, float)) and recorded_total > MAX_DELIVERY_FOLDER_BYTES:
+        errors.append(
+            f"交付目录合计 {int(recorded_total)} 字节超过上限 {MAX_DELIVERY_FOLDER_BYTES} 字节"
+        )
+    # Same derivation as the catalog builder uses, so a path with a backslash or a
+    # ``./`` prefix compares equal on both sides instead of failing spuriously.
+    expected_files = []
+    for item in [*(payload.get("main_materials") or []), *(payload.get("supporting_materials") or [])]:
+        raw = str(item.get("file") or "")
+        if raw:
+            expected_files.append(_safe_relative_path(raw) or raw)
+    catalog_file = target.parent / CATALOG_NAME
+    if catalog_file.is_file():
+        catalog = validate_material_catalog(catalog_file, expected_files=expected_files)
+        errors.extend(catalog["errors"])
+    elif "delivery_folder" in payload:
+        errors.append(f"当前交付缺少 {CATALOG_NAME}")
     return {"status": "pass" if not errors else "fail", "path": str(target.resolve()), "errors": errors}
 
 
@@ -714,10 +1054,10 @@ def delivery_folder_lines(manifest: dict[str, Any]) -> list[str]:
 
     Returns an empty list when the manifest carries no ``delivery_folder`` block
     (older deliveries), so the readme is unchanged there.  This is the number
-    that answers the user's "70~150 MB" requirement: it counts **every** file in
-    the delivery directory (00-交付说明.md / 01 / 02 / 03 / 04 / 05 / 清单.json), not
-    a single sub-folder, so it can never appear healthy while the folder as a
-    whole is over the limit.
+    that answers the "200,000,000 bytes" requirement: it counts **every** file in
+    the delivery directory (00-交付说明.md / 00-素材目录.json / 01 / 02 / 03 / 04 /
+    05 / 清单.json), not a single sub-folder, so it can never appear healthy while
+    the folder as a whole is over the limit.
     """
     block = manifest.get("delivery_folder")
     if not block:

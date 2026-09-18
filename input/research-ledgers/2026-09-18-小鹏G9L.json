@@ -1,0 +1,682 @@
+{
+  "schema": "episode-research-ledger/v1",
+  "theme": "小鹏G9L",
+  "business_date": "2026-09-18",
+  "episode_id": "2026-09-18-小鹏G9L",
+  "sources": [
+    {
+      "source_id": "src-01",
+      "authority": "official",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "小鹏汽车官网",
+      "origin_publisher": "小鹏汽车",
+      "title": "小鹏G9L 黄金大五座科技旗舰 | 小鹏汽车官网",
+      "url": "https://www.xiaopeng.com/g9l.html",
+      "published_at": "2026-09-17",
+      "excerpt": "小鹏官网G9L产品页（本人在2026-09-18直接打开）：超级增程CLTC纯电续航可达435km、综合续航可达1602km、百公里油耗低至6.16L、800V 5C超快充充电9min续航280km+；纯电版110度5C超充大电池、CLTC续航可达755km、百公里电耗低至14.9kWh、充电9min续航450km+；全系标配双腔空气悬架（空簧支持-30~40mm调节）、DCC智能可变阻尼减振器、前双叉臂后H臂全铝悬架、双向15°线控后轮转向（最小转弯半径5.4m）；后备厢1152L、230L下沉空间；全系搭载图灵AI芯片、有效算力至高2250TOPS、第二代VLA；官方称完成「水陆空720度七重安全极限测试」。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "evergreen",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-02",
+      "authority": "official",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "小鹏汽车官网",
+      "origin_publisher": "小鹏汽车",
+      "title": "小鹏G9L参数配置表 | 小鹏汽车官网",
+      "url": "https://www.xiaopeng.com/g9l/configuration.html",
+      "published_at": "2026-09-17",
+      "excerpt": "小鹏官网G9L官方参数配置表（本人在2026-09-18直接打开）：纯电四款「官方指导价」为755四驱Ultra旗舰版319,800元、660四驱Ultra 289,800元、660四驱Ultra SE 259,800元、702Max 241,800元；CLTC续航755/660/660/702km；电池能量110kWh（755版三元锂）/91.9kWh（其余）；直流快充SOC10%→80%最快≥10.7min（755版≥11.7min）；长宽高5120/1999/1782mm、轴距3100mm、五座；后备厢1152L（含230L下沉）、前备厢109L；图灵AI芯片1/2/3颗对应750/1500/2250TOPS；表内注明「限时赠送」「限时X元」选装优惠截止2026年11月15日；页脚免责声明称续航/充电/加速/能耗均为实验室特定条件下数据。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "evergreen",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-03",
+      "authority": "official",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "美通社 PR Newswire",
+      "origin_publisher": "小鹏汽车（XPENG）",
+      "title": "XPENG Launches Its Next-Gen AI Flagship SUV G9L in China, with Global Launch Set for Oct 12 at the Paris Motor Show",
+      "url": "https://en.prnasia.com/releases/global/xpeng-launches-its-next-gen-ai-flagship-suv-g9l-in-china-with-global-launch-set-for-oct-12-at-the-paris-motor-show-548391.shtml",
+      "published_at": "2026-09-17",
+      "excerpt": "小鹏汽车官方新闻稿（经PR Newswire/美通社发布，本人在2026-09-18打开）：BEIJING, Sept.17, 2026——XPENG在当日于北京举办G9L中国上市发布活动，宣布G9L将进入64个全球市场、全球上市发布会定于10月12日巴黎车展（展台Hall 6）；车长5,120mm、轴距3,100mm、轴长比0.605；提供BEV与REEV两种动力；搭载VLA 2.0与与IRON人形机器人同款图灵AI芯片；完成192次碰撞测试（覆盖Euro NCAP、ANCAP、C-NCAP、CIASI，110+单项）、26个国家及地区三年累计路试超674万公里；将在广州与奥地利格拉茨（麦格纳工厂）生产，为继G6、G9、P7+之后格拉茨生产的第四款车型；何小鹏并宣布世界首条通用人形机器人自动化产线投产。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-04",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "科技日报",
+      "origin_publisher": "科技日报",
+      "title": "立足全球标准打造 小鹏G9L上市",
+      "url": "https://www.stdaily.com/web/gdxw/2026-09/18/content_583165.html",
+      "published_at": "2026-09-18",
+      "excerpt": "科技日报记者杨雪署名报道（2026-09-18）：9月17日小鹏G9L在中国市场正式上市；历时三年在全球26个国家及地区累计完成674万公里道路测试；满足全球四大五星安全标准设计，累计完成192次碰撞测试；完成行业首次单车水陆空720°七重安全挑战；含5分钟应急浮水、驾驶员辅助失能系统、新增「远端安全-鹏友守望」（向1km内其他小鹏车辆发送求救信息）；最高搭载3颗图灵AI芯片、有效算力2250TOPS，首发第二代VLA全新版本；Max版首发搭载蒸馏版第二代VLA Lite。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-05",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "易车",
+      "origin_publisher": "易车",
+      "title": "小鹏G9L 参数配置（易车车款列表）",
+      "url": "https://car.m.yiche.com/xiaopengg9l/peizhi/",
+      "published_at": "2026-09-17",
+      "excerpt": "易车G9L参数配置页（本人在2026-09-18打开）：销售状态「在售」，指导价24.18-31.98万，中大型SUV；六款车款上市时间均为2026-09-17——纯电702后驱Max 24.18万/91.9kWh/702km/单电机270kW/6.8s；纯电660四驱Ultra SE 25.98万、660四驱Ultra 28.98万（均91.9kWh/660km/双电机430kW/4.6s）；纯电755四驱Ultra旗舰31.98万/110kWh三元锂/755km/4.45s；增程1602四驱Ultra SE 25.98万、1602四驱Ultra旗舰版30.98万（63.3kWh/CLTC纯电435km/1.5T增程器/油箱60L/92号汽油/4.95s）；全系长宽高5120*1999*1782mm、轴距3100mm、后备厢1152L。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "evergreen",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-06",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "太平洋汽车网",
+      "origin_publisher": "太平洋汽车网",
+      "title": "以“9系旗舰标准”重塑大五座SUV价值标杆 小鹏G9L上市",
+      "url": "https://www.pcauto.com.cn/hj/article/3539443.html",
+      "published_at": "2026-09-17",
+      "excerpt": "太平洋汽车网报道（2026-09-17）：小鹏G9L正式上市，共6款车型、纯电与超级增程两种动力，官方指导价24.18-31.98万元、限时售价23.18-30.98万元；与小鹏GX共享核心技术基座；车身5120×1999×1782mm、轴距3100mm、轴长比0.605；后备厢常规容积1152L、另有230L下沉空间、满载5人可放14个20寸行李箱、全车66处收纳；全系标配双腔空气悬架与DCC、空悬调节范围-30~+40mm、前双叉臂后H臂全铝悬架比传统底盘减重35kg；全系标配双向15°后轮转向、最小转弯半径5.4m；麋鹿测试最高通过速度80km/h以上、纯电四驱版零百最快4.45秒、百公里制动最短34.2米；全系标配800V高压平台和5C超充电池、9分钟可补充450km续航。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-07",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "证券时报",
+      "origin_publisher": "证券时报",
+      "title": "小鹏G9L首秀 何小鹏：历时三年测试",
+      "url": "https://www.stcn.com/article/detail/4071120.html",
+      "published_at": "2026-08-12",
+      "excerpt": "证券时报报道（时间背景为2026年8月12日前后，事件发生在8月11日晚）：8月11日晚小鹏G9L正式首秀亮相并开启预售，采用纯电、超级增程两种动力形式，预售价25.98万元；与小鹏GX共享核心技术基座；搭载5C超充大电池，充电9分钟CLTC续航最高可增加450km；第二代VLA将推出6.3.0版本、端侧模型参数量提升3.5倍、感知灵敏度提速300%；何小鹏称G9L历时三年测试、跨越26个国家及地区、累计测试里程突破670多万公里。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-08",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "腾讯自选股",
+      "origin_publisher": "每日经济新闻",
+      "title": "小鹏G9L预售开启，售价25.98万元，战略纠偏与市场再定位分析",
+      "url": "https://gu.qq.com/resources/shy/news/detail-v2/index.html?t=1#/index?_tentrees_trans=0&id=SN20260812000644a4a939e7",
+      "published_at": "2026-08-12",
+      "excerpt": "每日经济新闻稿件（经腾讯自选股平台转载，图片署名「每经记者 孙磊 摄」；时间背景为2026年8月12日，事件为8月11日预售）：8月11日小鹏G9L正式亮相并开启预售，预售价25.98万元；G9L基于全新G平台（代号G02）打造，与六座全尺寸SUV小鹏GX（G01）共享技术架构，与在售G9的E平台无关联；何小鹏透露项目三年前启动，历经三年全球路试、覆盖26个国家及地区、累计里程超674万公里；文中并给出小鹏GX「上市12小时大定达24863辆」等对照数据。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-09",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "腾讯网",
+      "origin_publisher": "腾讯网",
+      "title": "定价炸裂，同级无对手！小鹏G9L正式上市",
+      "url": "https://new.qq.com/rain/a/20260917A0EN9B00",
+      "published_at": "2026-09-17",
+      "excerpt": "腾讯网报道（2026-09-17）：小鹏G9L以23.18万元起限时定价上市，推出纯电、超级增程两套动力、覆盖六款配置；定位黄金大五座科技旗舰，车长5120mm、轴距3100mm、宽高1999×1782mm；纯电702两驱Max限时23.18万元（CLTC续航702公里）、660四驱Ultra SE 24.98万元、660四驱Ultra 27.98万元、755四驱Ultra旗舰版30.98万元（CLTC 755公里）；超级增程1602四驱Ultra SE 24.98万元、1602四驱Ultra旗舰版29.98万元（综合CLTC续航1602公里）；称整车历经三年研发、跨越全球26个国家完成道路测试、累计验证里程超674万公里、满足全球64个国家和地区法规。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-10",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "新浪汽车",
+      "origin_publisher": "新浪汽车",
+      "title": "小鹏G9L增程版和纯电版该怎么选",
+      "url": "https://auto.sina.cn/2026-09-18/detail-inisesms8814526.d.html",
+      "published_at": "2026-09-18",
+      "excerpt": "新浪汽车报道（2026-09-18）：小鹏G9L于2026年9月17日正式上市，限时权益价23.18万元起，提供纯电与超级增程两种动力共6个版本，纯电版最高续航755km、增程版综合续航1602km；纯电四款为702两驱Max 23.18万、660四驱Ultra SE 24.98万、660四驱Ultra 27.98万、755四驱Ultra旗舰版30.98万，超级增程两款为1602四驱Ultra SE 24.98万、1602四驱Ultra旗舰版29.98万；全系限时现金减免1万元、截至2026年11月15日24:00前下定可享，相比预售25.98万元起下探2.8万元；全系标配800V高压平台+5C超充，纯电版充电9分钟最高增加450km续航、增程版9分钟补能约280km；全系标配双腔空气悬架、后轮线控转向、最小转弯半径5.4米；后备箱容积1152L。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-11",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "今日头条",
+      "origin_publisher": "红星新闻",
+      "title": "有纯电有增程 小鹏G9L上市，售价23.18万元起",
+      "url": "https://www.toutiao.com/article/7686511181875560969/",
+      "published_at": "2026-09-17",
+      "excerpt": "红星新闻稿件（经今日头条平台发布，2026-09-17）：小鹏G9L于9月17日晚宣布正式上市，推出纯电和超级增程两种版本，纯电续航有702公里和660公里两种可选，超级增程版CLTC综合续航可达1602公里、兼容92号汽油；将加速出海、10月12日在法国巴黎举办全球上市发布会，并在中国广州工厂与奥地利格拉茨工厂同步制造；多项配置与小鹏GX同根同源；5120mm车长搭配3100mm轴距、0.605黄金轴长比；全系标配后轮转向、转弯半径5.4米；全系标配双腔空气悬架和DCC、支持70mm可调节范围；前双叉臂后H臂全铝悬架比传统底盘减重35kg；纯电版最大马力585匹、零百最快4.45秒、百公里制动最短34.2m；1152L后备厢可并排放下5个24寸行李箱、另有230L下沉空间、全车66处收纳。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-12",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "tiencars.com（Electric High）",
+      "origin_publisher": "tiencars.com（Electric High）",
+      "title": "XPeng G9L heads to 64 markets, global launch set for Paris on Oct 12",
+      "url": "https://tiencars.com/2026/09/xpeng-g9l-heads-to-64-markets-global-launch-set-for-paris-on-oct-12",
+      "published_at": "2026-09-17",
+      "excerpt": "英文独立汽车媒体报道（2026年9月）：XPeng将把新旗舰SUV G9L带到64个国家和地区，国际上市定于10月12日巴黎车展；G9L于9月17日在中国上市，提供纯电与增程两种动力；车长5,120mm、轴距3,100mm，高于在售G9；搭载第二代VLA 2.0与图灵AI芯片（与IRON人形机器人同款）；完成192次碰撞测试（覆盖Euro NCAP、ANCAP、C-NCAP、CIASI，110+单项）、三年26个国家及地区路试超674万公里；将在广州与奥地利格拉茨（麦格纳工厂）生产，为继G6、G9、P7+之后第四款在格拉茨生产的车型（与麦格纳的合作于2025年9月宣布）；巴黎车展小鹏展台位于Hall 6。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-13",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "汽车之家",
+      "origin_publisher": "汽车之家",
+      "title": "立足全球标准打造，小鹏G9L，大五座科技旗舰上新（车家号）",
+      "url": "https://chejiahao.autohome.com.cn/info/26479714",
+      "published_at": "2026-09-17",
+      "excerpt": "汽车之家「车家号」内容（2026-09-17，北京）：小鹏G9L正式在中国市场上市，官方限时售价23.18万元起，纯电与超级增程两种动力共6个版本；列出六款限时价与「2026年11月15日24点前下定可享最高价值超过63000元配置/权益，老用户最高超82000元」；外观5款颜色、内饰4种配色，黑金套件限时价10000元；采用六座空间五座布局、官方称190cm乘客后排仍舒展；后备箱容积1152L、另有230L下沉空间、全车66处收纳；车长5120mm、轴距3100mm、轴长比0.605；全系标配后轮转向、转弯半径5.4米；底盘全系标配双腔空气悬架、DCC智能可变阻尼减振器、全铝悬架、自研X-VMC底盘运动控制系统；麋鹿测试80km/h以上、零百最快4.45秒、百公里制动最短34.2米；性能检验官尹正称其为「西装暴徒」，并与团队基于G9L打造高速移动摄影改装版。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-14",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "网易新闻",
+      "origin_publisher": "网易",
+      "title": "小鹏车展秀肌肉！三款车型发布新套件，G9L西南地区订单占比创新高",
+      "url": "https://c.m.163.com/news/a/L54OFHIF0517WKE2.html",
+      "published_at": "2026-08-21",
+      "excerpt": "网易新闻报道（2026年成都车展期间，约8月21日）：小鹏G9L全新黑金套件官方指导价15,000元、限时优惠价10,000元；小鹏G9L于8月11日开启预售，成都车展发布会现场小鹏产品经理分享「小鹏G9L在西南地区的订单占比创下小鹏车型历史新高，其中超级增程版本选购占比超82%」，称「舒服、宽敞、有面、安全」是打动西南用户的四大理由；G9L展车已陆续抵达全国220家门店；另称小鹏GX在阿联酋等市场在未公布售价情况下收获超2,000台订单。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-15",
+      "authority": "primary_creator",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "微博",
+      "origin_publisher": "小鹏汽车（官方物料搬运贴）",
+      "title": "小鹏G9L超级增程版 西南订单占比创新高 满油穿罗布泊1403公里",
+      "url": "https://weibo.com/5710264970/5334286624622043",
+      "published_at": "2026-08-21",
+      "excerpt": "微博帖（2026年8月21日前后，文案为厂商营销物料口径）：称小鹏G9L自8月11日开启预订以来西南地区订单占比创小鹏车型历史新高、超级增程版本选购占比超82%；称超级增程系统在罗布泊无人区得到印证——「1403.8公里，小鹏G9L满油穿越，全程未补能，续航达成率95.11%」。注意：该帖内容与官方上市海报口径一致，但发帖账号是否为小鹏官方主账号未能在本机逐字核验，故按「一手/厂商物料」而非官方发布渠道归类。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-16",
+      "authority": "unknown",
+      "verification_state": "not_applicable",
+      "heat_only": true,
+      "publisher": "新浪（自动化生成内容页）",
+      "origin_publisher": "新浪（自动化生成内容页）",
+      "title": "小鹏g9l预定量",
+      "url": "https://www.sina.cn/gc/article/ninfvzv2931159.html",
+      "published_at": "2026-09-17",
+      "excerpt": "该页为新浪「gc」栏目的自动化生成文章（页面/同类同源页面文末自述「本文由AI生成」）。通篇为「预定量已突破品牌预期」「多个城市门店出现预约试驾高峰」等无出处、无绝对数字的表述，未给出任何订单台数，也未列明信息来源。仅作为「网络上存在关于预定量的模糊热度话术」的线索，不构成事实来源。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "unknown"
+      }
+    },
+    {
+      "source_id": "src-17",
+      "authority": "unknown",
+      "verification_state": "not_applicable",
+      "heat_only": true,
+      "publisher": "DGMG（digitalgroundmedia.com）",
+      "origin_publisher": "DGMG（digitalgroundmedia.com）",
+      "title": "XPeng's G9L AI SUV Launches Globally, Heads to Paris Motor Show",
+      "url": "https://digitalgroundmedia.com/the-wire/xpengs-g9l-ai-suv-launches-globally-heads-to-paris-motor-show",
+      "published_at": "2026-09-17",
+      "excerpt": "英文内容农场式二手稿，正文与同期小鹏官方新闻稿高度同构（64国、10月12日巴黎车展、192次碰撞测试、26国674万公里、广州与格拉茨麦格纳工厂等），文末自述「Original story via source」但不给出可核验出处，未提供任何独立采访或新增事实。仅作传播热度线索，不构成事实来源。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "unknown"
+      }
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "claim-01",
+      "topic_id": "topic-01",
+      "text": "2026年9月17日19:00，小鹏汽车在北京举行「小鹏G9L」中国上市发布会，宣布新车正式上市；G9L定位「黄金大五座科技旗舰」SUV，推出纯电与超级增程两种动力、共6个版本，并与六座旗舰小鹏GX组成「旗舰双王」布局。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-01", "src-03", "src-06"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「上市发布会」说成已经交付用户", "不要把小鹏G9L与小鹏GX说成同一款车"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-02",
+      "topic_id": "topic-01",
+      "text": "小鹏G9L的价格分两档：官方上市指导价24.18万–31.98万元；2026年11月15日24:00前支付5000元定金的用户享限时权益价23.18万–30.98万元（全系已含1万元现金权益减免）。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-02", "src-05", "src-06"],
+      "material_refs": [],
+      "claims_to_verify": ["限时权益价的有效期是否会在11月15日后调整、是否覆盖全部六款车型"],
+      "do_not_claim": ["不要把23.18万元起写成上市指导价（指导价是24.18万元起）", "不要把限时权益价当成长期有效价格"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-03",
+      "topic_id": "topic-01",
+      "text": "六款车型官方指导价／限时权益价：纯电702 Max 24.18万／23.18万；纯电660四驱Ultra SE 25.98万／24.98万；纯电660四驱Ultra 28.98万／27.98万；纯电755四驱Ultra旗舰版 31.98万／30.98万；超级增程1602四驱Ultra SE 25.98万／24.98万；超级增程1602四驱Ultra旗舰版 30.98万／29.98万。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-02", "src-05", "src-09"],
+      "material_refs": [],
+      "claims_to_verify": ["增程两款车型的官方指导价（官网配置表的增程页未与纯电页一并抓取，需以官方增程配置页复核）"],
+      "do_not_claim": ["不要只说一个「起售价」而不写清是指导价还是限时权益价", "不要把六个版本的价格顺序说成由高到低或与配置高低完全一致的排序"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-04",
+      "topic_id": "topic-01",
+      "text": "小鹏G9L在2026年8月11日晚首次亮相并开启预售，预售价25.98万元起；9月17日正式上市后，入门版限时权益价下探至23.18万元（指导价24.18万元），比预售价低约2.8万元。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-02", "src-07", "src-08"],
+      "material_refs": [],
+      "claims_to_verify": ["预售价25.98万元对应的具体版本（预售期仅公布单一「预售价25.98万元起」口径）"],
+      "do_not_claim": ["不要把预售价25.98万元说成正式上市价", "不要把「下探2.8万元」理解为全系每款车型都降2.8万元"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-05",
+      "topic_id": "topic-01",
+      "text": "续航方面：纯电版CLTC纯电续航最高755km（按版本为660/702/755km三档）；超级增程版CLTC纯电续航435km、CLTC综合续航最高1602km。以上均为CLTC工况数据。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-01", "src-02", "src-06"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把CLTC续航说成实际续航（官网另有城区实测达成率等口径，两者不可混用）", "不要把增程版的435km纯电续航说成综合续航"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-06",
+      "topic_id": "topic-01",
+      "text": "三电与平台：G9L全系标配全域800V高压平台与5C超充电池；纯电版电池能量为91.9kWh（660/702版，磷酸铁锂）与110kWh（755版，三元锂）；超级增程版电池63.3kWh、油箱60L、兼容92号汽油、亏电油耗6.16L/100km，全系增程车型为双电机四驱。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-01", "src-02", "src-05"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「800V平台」说成任何时候都能以800V充电（实际取决于充电桩）", "不要把增程版的亏电油耗6.16L/100km当成综合工况油耗"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-07",
+      "topic_id": "topic-01",
+      "text": "补能口径：官方称纯电版「充电9分钟续航至高增加450km」、超级增程版「充电9min续航280km+」；官方配置表给出直流快充SOC 10%→80%最快≥10.7分钟（755版≥11.7分钟），以及「12分钟补能里程」755版≤530km、702版≤520km。这几组数字对应不同口径，不能互相替代。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-01", "src-02", "src-05"],
+      "material_refs": [],
+      "claims_to_verify": ["9分钟补能450km对应的起始SOC与充电桩型号（官方注明为实验室环境下使用小鹏S5充电桩测试）"],
+      "do_not_claim": ["不要把「9分钟补能450km」理解为从0到450km或从任意电量可用", "不要把9分钟口径与10%-80%用时混为同一指标"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-08",
+      "topic_id": "topic-01",
+      "text": "尺寸与空间：车长5120mm、车宽1999mm、车高1782mm、轴距3100mm，轴长比0.605，五座布局；后备厢常规容积1152L（含230L下沉储物空间），前备厢109L。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-02", "src-05", "src-09"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「六座空间五座布局」理解为六座车型", "不要把230L下沉空间重复计入1152L之外的总容积"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-09",
+      "topic_id": "topic-01",
+      "text": "底盘与操控：G9L全系标配双腔空气悬架（空簧支持-30~+40mm调节）、DCC智能可变阻尼减振器、前双叉臂后H臂全铝悬架、双向15°线控后轮转向，最小转弯半径5.4m；全铝悬架比传统底盘减重35kg；纯电四驱版零百加速最快4.45秒，官方称麋鹿测试超80km/h、百公里制动距离最短34.2m。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-01", "src-02", "src-05"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把麋鹿测试、制动距离等数据说成普适道路实测结果（官网注明为试验场地特定条件）", "不要把小鹏G9L的最小转弯半径5.4m与其他车型对比数说成官方口径"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-10",
+      "topic_id": "topic-01",
+      "text": "智驾配置：G9L全系搭载图灵AI芯片，按版本为1颗／2颗／3颗，对应整车有效算力750／1500／2250TOPS；首发搭载小鹏图灵第二代VLA全新版本，Max版则首发搭载蒸馏版「第二代VLA Lite」。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-01", "src-03", "src-04"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把辅助驾驶说成自动驾驶", "不要把「首发搭载」说成全系都具备2250TOPS算力"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-11",
+      "topic_id": "topic-01",
+      "text": "全球化验证：G9L面向全球64个国家和地区、满足超3000项法规条目；历时三年在26个国家及地区累计路试里程超674万公里；累计完成192次碰撞测试，覆盖Euro NCAP、ANCAP、C-NCAP、CIASI四大安全协议、合计110余个单项。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-03", "src-12"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「满足全球64个国家和地区法规」说成已取得这些市场的上市认证或销量成绩", "不要把192次碰撞测试说成192款车型"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-12",
+      "topic_id": "topic-01",
+      "text": "小鹏宣布，G9L将于2026年10月12日在法国巴黎车展举行全球上市发布（小鹏展台位于6号馆），法国是其国际推广的第一站。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-03", "src-12"],
+      "material_refs": [],
+      "claims_to_verify": ["10月12日巴黎车展发布会的具体时间与形式是否如期举行"],
+      "do_not_claim": ["不要把「计划10月12日全球上市」说成已经在欧洲交付", "不要把这个日期说成国内上市日期"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-13",
+      "topic_id": "topic-01",
+      "text": "生产布局：G9L将在中国广州工厂与奥地利格拉茨的麦格纳（Magna）工厂同步生产，是继G6、G9、P7+之后第四款在格拉茨工厂生产的车型；小鹏与麦格纳的合作协议于2025年9月宣布。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-03", "src-12"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「将在格拉茨生产」说成格拉茨工厂已经量产下线G9L", "不要把麦格纳说成小鹏的合资方"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-14",
+      "topic_id": "topic-01",
+      "text": "限时购车权益：2026年11月15日24:00前支付5000元定金的用户可享限时现金减免1万元，以及21.4英寸3K二排娱乐屏、峡湾灰车漆、撒哈拉橙内饰等限时赠送/优惠选装；官方称下定最高可享价值超63000元的配置/权益，老用户复购权益最高超82000元。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-02", "src-10"],
+      "material_refs": [],
+      "claims_to_verify": ["「价值超63000元」与「82000元」权益的具体构成与计算基准"],
+      "do_not_claim": ["不要把权益价值当成现金优惠（多为选装/赠品折算）", "不要把老用户复购权益说成所有用户都可享"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-15",
+      "topic_id": "topic-01",
+      "text": "按小鹏方面的营销口径，超级增程版曾在罗布泊无人区做零补能穿越测试：满油行驶实际达成续航1403.8km、挑战结束表显剩余里程41km、续航达成率95.11%。这是厂商自述的极限测试结果，不是标准工况或第三方认证数据。",
+      "evidence_status": "creator_primary",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-15"],
+      "material_refs": [],
+      "claims_to_verify": ["该帖账号是否为小鹏官方主账号（未能在本机核验）", "1403.8km对应的具体版本、载重、气温与路线条件"],
+      "do_not_claim": ["不要把1403.8km说成CLTC续航或日常真实续航", "不要把厂商自测说成第三方认证测试"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 1
+    },
+    {
+      "claim_id": "claim-16",
+      "topic_id": "topic-01",
+      "text": "据小鹏在2026年成都车展披露的口径，G9L预售阶段在西南地区的订单占比创下小鹏量产车型历史新高，其中超级增程版本的选购占比超过82%。该数据为厂商自述的订单结构，不是第三方统计。",
+      "evidence_status": "creator_primary",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-14", "src-15"],
+      "material_refs": [],
+      "claims_to_verify": ["「西南地区订单占比创历史新高」的绝对订单台数（厂商未公布）", "82%是按订单量还是按到店/试驾口径统计"],
+      "do_not_claim": ["不要把82%说成全国订单中增程版的占比", "不要把订单结构等同于最终交付结构"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-17",
+      "topic_id": "topic-01",
+      "text": "网传「小鹏G9L预售24小时订单破1.8万台」。本条未能找到任何可核实的出处：小鹏官方渠道未见该数字，检索到的相关页面只有「预定量已突破品牌预期」这类无台数、无来源的自动化生成话术，或厂商披露的「西南占比创新高、增程超82%」等无绝对台数的口径。因此该数字无法确认为事实。",
+      "evidence_status": "unverified",
+      "wording_policy": "attribute",
+      "freshness_requirement": "manual_review",
+      "source_ids": ["src-16"],
+      "material_refs": [],
+      "claims_to_verify": ["若有厂商战报或权威媒体报道可给出确切台数，需以一手页面复核后再决定是否升级证据状态"],
+      "do_not_claim": ["不得将该数字表述为厂商公布的订单量或战报", "不得把「1.8万台」与任何官方订单/大定数据并列引用", "不得在无出处的情况下把该数字写进口播稿"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 0
+    },
+    {
+      "claim_id": "claim-18",
+      "topic_id": "topic-01",
+      "text": "市面上关于G9L「起售价」同时流传三个数字，口径并不一致：预售阶段是25.98万元起（8月11日开启预售），上市官方指导价是24.18万元起，上市限时权益价是23.18万元起。很多媒体标题直接写「23.18万元起」，容易被误当成厂商指导价。",
+      "evidence_status": "conflicting",
+      "wording_policy": "hedge",
+      "freshness_requirement": "manual_review",
+      "source_ids": ["src-02", "src-07", "src-09"],
+      "material_refs": [],
+      "claims_to_verify": ["限时权益价是否会在2026年11月15日后回调至指导价", "是否有其他渠道存在第四个「起售价」口径"],
+      "do_not_claim": ["不要只挑一个数字说成唯一权威的起售价", "不要把三个数字混用或相加"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-19",
+      "topic_id": "topic-01",
+      "text": "发布会现场，性能检验官／体验官尹正以「西装暴徒」形容G9L，并称后轮转向让这台超过5.1米的大车有A0级小车般的灵活感；他还与团队把G9L改装成高速移动摄影（车载摇臂）车，成为发布会上较出圈的一幕。",
+      "evidence_status": "confirmed_two_reliable",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-06", "src-13"],
+      "material_refs": [],
+      "claims_to_verify": ["改装摄影车是由小鹏官方还是第三方团队完成、是否为可交付的量产改装方案"],
+      "do_not_claim": ["不要把「西装暴徒」当成官方产品定义或性能参数", "不要把改装车说成量产配置"],
+      "fact_sources_min": 2,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-20",
+      "topic_id": "topic-01",
+      "text": "G9L不是现款G9的改款，而是与小鹏六座旗舰GX共享核心技术基座的同级产品，二者被小鹏称为「旗舰双王」（GX守六座、G9L守五座）。",
+      "evidence_status": "confirmed_two_reliable",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-06", "src-11"],
+      "material_refs": [],
+      "claims_to_verify": ["G9L与GX是否共用同一整车平台（有报道称G9L为G平台G02、GX为G01）"],
+      "do_not_claim": ["不要把G9L说成G9的改款或长轴版", "不要把「旗舰双王」当成官方车系命名"],
+      "fact_sources_min": 2,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-21",
+      "topic_id": "topic-01",
+      "text": "官网、配置表与官方宣传中的续航、充电、加速、麋鹿测试、制动距离、能耗等均标注为实验室或试验场地特定条件下的测试数据（官网脚注明确 CLTC 续航按20英寸轮毂测得、快充数据经小鹏S5充电桩测得），实际使用会受温度、路况、轮毂尺寸、驾驶习惯等影响，不能当成普适道路实测结果。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-01", "src-02"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把实验室数据当作实际道路实测结果引用", "不要省略「CLTC工况」「试验场地条件」等限定语"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-22",
+      "topic_id": "topic-01",
+      "text": "发布会与官方物料中的几处代表性表述：G9L以「六座空间、五座布局」强调后排，「1152L后备厢可并排放下5个24寸行李箱」，何小鹏在现场称该车「六座空间五座布局」、第二排可同坐3个1米9的大高个。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-01", "src-03", "src-11"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「可并排放下5个24寸行李箱」说成标准工况下的官方容积认证", "不要把现场口号当成实测结论"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    }
+  ],
+  "topics": {
+    "keyword_graph": {
+      "seed": "小鹏G9L",
+      "expanded": ["小鹏G9L 上市", "小鹏G9L 价格", "小鹏 G9L 大五座SUV", "小鹏G9L 续航 增程"],
+      "subject_terms": ["小鹏G9L", "小鹏汽车", "何小鹏", "小鹏GX", "图灵AI芯片"],
+      "event_terms": ["小鹏G9L 上市发布会", "限时权益价23.18万起", "超级增程 1602km", "800V 5C超充", "巴黎车展全球上市"],
+      "keywords_requested": ["小鹏G9L", "G9L", "小鹏 新车", "小鹏G9L 上市", "小鹏G9L 价格", "小鹏 大五座SUV"],
+      "keywords_used": ["小鹏G9L", "G9L", "小鹏 新车", "小鹏G9L 上市", "小鹏G9L 价格", "小鹏 大五座SUV", "小鹏G9L 发布会", "小鹏 增程", "小鹏 充电"],
+      "keywords_truncated": false
+    },
+    "topic_candidates": [
+      {
+        "topic_id": "topic-01",
+        "title": "小鹏G9L",
+        "keywords": ["小鹏G9L", "G9L", "小鹏 新车", "小鹏G9L 上市", "小鹏G9L 价格", "小鹏 大五座SUV", "小鹏G9L 发布会", "小鹏 增程"],
+        "selection_basis": "agent_research_ledger",
+        "producer_proposal": true
+      }
+    ],
+    "selected_topic": {
+      "topic_id": "topic-01",
+      "title": "小鹏G9L",
+      "keywords": ["小鹏G9L", "G9L", "小鹏 新车", "小鹏G9L 上市", "小鹏G9L 价格", "小鹏 大五座SUV", "小鹏G9L 发布会", "小鹏 增程"],
+      "selection_basis": "agent_research_ledger",
+      "producer_proposal": true
+    },
+    "argument_graph": {
+      "topic_id": "topic-01",
+      "nodes": [
+        {"claim_id": "claim-01", "dim": "event_core", "claim": "2026年9月17日19:00，小鹏汽车在北京举行小鹏G9L中国上市发布会，宣布新车正式上市；G9L定位黄金大五座科技旗舰SUV，推出纯电与超级增程两种动力共6个版本，并与六座旗舰小鹏GX组成旗舰双王布局。", "source_candidate_ids": ["src-01", "src-03", "src-06"]},
+        {"claim_id": "claim-02", "dim": "key_number", "claim": "小鹏G9L价格分两档：官方上市指导价24.18万–31.98万元；2026年11月15日24:00前支付5000元定金的用户享限时权益价23.18万–30.98万元。", "source_candidate_ids": ["src-02", "src-05", "src-06"]},
+        {"claim_id": "claim-03", "dim": "key_number", "claim": "六款车型官方指导价／限时权益价：702 Max 24.18／23.18万；660四驱Ultra SE 25.98／24.98万；660四驱Ultra 28.98／27.98万；755四驱Ultra旗舰版 31.98／30.98万；增程1602四驱Ultra SE 25.98／24.98万；增程1602四驱Ultra旗舰版 30.98／29.98万。", "source_candidate_ids": ["src-02", "src-05", "src-09"]},
+        {"claim_id": "claim-04", "dim": "key_number", "claim": "小鹏G9L在2026年8月11日晚开启预售，预售价25.98万元起；9月17日上市后入门版限时权益价下探至23.18万元，比预售价低约2.8万元。", "source_candidate_ids": ["src-02", "src-07", "src-08"]},
+        {"claim_id": "claim-05", "dim": "key_number", "claim": "纯电版CLTC续航最高755km（660/702/755三档）；超级增程版CLTC纯电续航435km、综合续航最高1602km。", "source_candidate_ids": ["src-01", "src-02", "src-06"]},
+        {"claim_id": "claim-06", "dim": "key_number", "claim": "全系标配全域800V高压平台与5C超充电池；纯电版电池91.9kWh（660/702版）与110kWh（755版）；增程版电池63.3kWh、油箱60L、兼容92号汽油、亏电油耗6.16L/100km。", "source_candidate_ids": ["src-01", "src-02", "src-05"]},
+        {"claim_id": "claim-07", "dim": "mechanism", "claim": "补能口径：官方称纯电版充电9分钟续航至高增加450km、增程版充电9分钟续航280km+；配置表给出10%→80%最快≥10.7分钟（755版≥11.7分钟）与12分钟补能里程≤530/520km，对应不同口径。", "source_candidate_ids": ["src-01", "src-02", "src-05"]},
+        {"claim_id": "claim-08", "dim": "key_number", "claim": "车长5120mm、车宽1999mm、车高1782mm、轴距3100mm，轴长比0.605，五座布局；后备厢1152L（含230L下沉空间），前备厢109L。", "source_candidate_ids": ["src-02", "src-05", "src-09"]},
+        {"claim_id": "claim-09", "dim": "key_number", "claim": "全系标配双腔空气悬架（-30~+40mm调节）、DCC减振器、前双叉臂后H臂全铝悬架、双向15°线控后轮转向，最小转弯半径5.4m；纯电四驱零百最快4.45秒、麋鹿测试超80km/h、百公里制动最短34.2m。", "source_candidate_ids": ["src-01", "src-02", "src-05"]},
+        {"claim_id": "claim-10", "dim": "evidence_detail", "claim": "全系搭载图灵AI芯片（1/2/3颗对应750/1500/2250TOPS），首发第二代VLA全新版本，Max版首发蒸馏版第二代VLA Lite。", "source_candidate_ids": ["src-01", "src-03", "src-04"]},
+        {"claim_id": "claim-11", "dim": "evidence_detail", "claim": "面向全球64个国家和地区、满足超3000项法规；三年内在26个国家及地区累计路试超674万公里；完成192次碰撞测试，覆盖Euro NCAP、ANCAP、C-NCAP、CIASI四大协议、110余个单项。", "source_candidate_ids": ["src-03", "src-12"]},
+        {"claim_id": "claim-12", "dim": "event_core", "claim": "G9L将于2026年10月12日在法国巴黎车展举行全球上市发布，小鹏展台位于6号馆。", "source_candidate_ids": ["src-03", "src-12"]},
+        {"claim_id": "claim-13", "dim": "industry_value", "claim": "G9L将在中国广州工厂与奥地利格拉茨的麦格纳工厂同步生产，是继G6、G9、P7+之后第四款在格拉茨生产的车型；与麦格纳的合作协议于2025年9月宣布。", "source_candidate_ids": ["src-03", "src-12"]},
+        {"claim_id": "claim-14", "dim": "user_impact", "claim": "2026年11月15日24:00前支付5000元定金可享限时现金减免1万元及多项限时赠送/优惠选装；官方称下定最高可享价值超63000元配置/权益，老用户复购权益最高超82000元。", "source_candidate_ids": ["src-02", "src-10"]},
+        {"claim_id": "claim-15", "dim": "key_number", "claim": "按厂商口径，超级增程版在罗布泊零补能穿越测试中实际达成续航1403.8km、续航达成率95.11%，属厂商自述极限测试结果。", "source_candidate_ids": ["src-15"]},
+        {"claim_id": "claim-16", "dim": "industry_value", "claim": "据小鹏成都车展口径，G9L预售阶段西南地区订单占比创小鹏量产车型历史新高，其中超级增程版选购占比超82%。", "source_candidate_ids": ["src-14", "src-15"]},
+        {"claim_id": "claim-17", "dim": "uncertainty", "claim": "网传「小鹏G9L预售24小时订单破1.8万台」，未能在小鹏官方渠道或可核实媒体找到出处，仅有无台数的自动化生成话术，故无法确认为事实。", "source_candidate_ids": ["src-16"]},
+        {"claim_id": "claim-18", "dim": "uncertainty", "claim": "关于起售价同时流传三个口径：预售25.98万元起、上市指导价24.18万元起、限时权益价23.18万元起；媒体标题多直接写23.18万元起，易被误当成指导价。", "source_candidate_ids": ["src-02", "src-07", "src-09"]},
+        {"claim_id": "claim-19", "dim": "visual_moment", "claim": "发布会现场，体验官尹正以「西装暴徒」形容G9L，并与团队把G9L改装成高速移动摄影（车载摇臂）车。", "source_candidate_ids": ["src-06", "src-13"]},
+        {"claim_id": "claim-20", "dim": "evidence_detail", "claim": "G9L不是现款G9的改款，而是与小鹏六座旗舰GX共享核心技术基座，二者被小鹏称为「旗舰双王」。", "source_candidate_ids": ["src-06", "src-11"]},
+        {"claim_id": "claim-21", "dim": "limitation", "claim": "官网与配置表中的续航、充电、加速、麋鹿测试、制动距离、能耗均为实验室或试验场地特定条件下的数据，实际使用会受温度、路况、轮毂尺寸、驾驶习惯等影响。", "source_candidate_ids": ["src-01", "src-02"]},
+        {"claim_id": "claim-22", "dim": "visual_moment", "claim": "发布会与官方物料中的代表性表述：「六座空间、五座布局」；「1152L后备厢可并排放下5个24寸行李箱」；何小鹏称第二排可同坐3个1米9的大高个。", "source_candidate_ids": ["src-01", "src-03", "src-11"]}
+      ],
+      "edges": [
+        {"from": "claim-04", "to": "claim-02", "relation": "precedes"},
+        {"from": "claim-01", "to": "claim-12", "relation": "precedes"},
+        {"from": "claim-03", "to": "claim-02", "relation": "supports"},
+        {"from": "claim-05", "to": "claim-06", "relation": "supports"},
+        {"from": "claim-06", "to": "claim-07", "relation": "supports"},
+        {"from": "claim-09", "to": "claim-01", "relation": "supports"},
+        {"from": "claim-10", "to": "claim-01", "relation": "supports"},
+        {"from": "claim-11", "to": "claim-01", "relation": "supports"},
+        {"from": "claim-13", "to": "claim-11", "relation": "supports"},
+        {"from": "claim-12", "to": "claim-11", "relation": "supports"},
+        {"from": "claim-14", "to": "claim-02", "relation": "supports"},
+        {"from": "claim-18", "to": "claim-02", "relation": "qualifies"},
+        {"from": "claim-17", "to": "claim-16", "relation": "qualifies"},
+        {"from": "claim-15", "to": "claim-16", "relation": "qualifies"},
+        {"from": "claim-19", "to": "claim-01", "relation": "supports"},
+        {"from": "claim-20", "to": "claim-01", "relation": "supports"},
+        {"from": "claim-21", "to": "claim-06", "relation": "qualifies"},
+        {"from": "claim-22", "to": "claim-01", "relation": "supports"},
+        {"from": "claim-16", "to": "claim-01", "relation": "supports"}
+      ]
+    }
+  }
+}

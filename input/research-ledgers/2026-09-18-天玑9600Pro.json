@@ -1,0 +1,839 @@
+{
+  "schema": "episode-research-ledger/v1",
+  "theme": "天玑9600Pro",
+  "business_date": "2026-09-18",
+  "episode_id": "2026-09-18-天玑9600Pro",
+  "sources": [
+    {
+      "source_id": "src-01",
+      "authority": "official",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "MediaTek 官网（中文新闻稿）",
+      "origin_publisher": "MediaTek（联发科技）",
+      "title": "MediaTek 发布天玑 9600 Pro，卓越 AI 重构强悍冷劲旗舰体验",
+      "url": "https://www.mediatek.com/zh-cn/press-room/mediatek-dimensity-9600-pro-sets-new-standard-for-flagship-smartphone-chips?hsLang=zh-cn",
+      "published_at": "2026-09-15",
+      "excerpt": "官方中文新闻稿（2026-09-15）：发布天玑9600系列旗舰5G智能体AI芯片天玑9600 Pro与天玑9600M；天玑9600 Pro采用台积电2纳米工艺与DTCO；2+3+3全大核（2×4.55GHz C2-Ultra、3×4.35GHz C2-Pro、3×3.1GHz C2-Pro），34.5MB缓存（L2+L3+SLC），率先支持LPDDR6与UFS 5.0；单核+17%、多核+15%、多核功耗较上一代峰值性能下节省61%；G2-Ultra NX GPU峰值性能+27%、峰值功耗-24%、光追+18%；第二代超能效NPU功耗-40%，NPU 1090大模型预填充+51%、每瓦特生成词元数最高+55%、支持30B MoE端侧运行；Imagiq 1290、4K240原慢动作、4K120 Log、17EV。文末注明「文内数据来自 MediaTek 实验室」。全文未提及 vivo、OPPO 等终端机型。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-02",
+      "authority": "official",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "MediaTek Newsroom（英文新闻稿）",
+      "origin_publisher": "MediaTek（联发科技）",
+      "title": "MediaTek Dimensity 9600 Pro Sets New Standard for Flagship Smartphone Chips",
+      "url": "https://www.mediatek.com/press-room/mediatek-dimensity-9600-pro-sets-new-standard-for-flagship-smartphone-chips?hsLang=en",
+      "published_at": "2026-09-15",
+      "excerpt": "官方英文新闻稿（HSINCHU, Sept. 15, 2026）：标题副题即「Advanced 2nm SoC delivers … including 61% drop in multi-core power consumption」；正文写 9600 Pro「adopting the new 2nm process node; as the first company to announce reaching this threshold」，并链接其 2025 年 N2P 开发稿；脚注写明「*Performance metrics achieved via demo device testing in MediaTek labs.」；首批机型措辞为「expected to launch this quarter」。同样未点名 vivo / OPPO。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-03",
+      "authority": "official",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "MediaTek Newsroom（英文新闻稿）",
+      "origin_publisher": "MediaTek（联发科技）",
+      "title": "MediaTek Develops Chip Utilizing TSMC's 2nm Process, Achieving Milestones in Performance and Power Efficiency",
+      "url": "https://www.mediatek.com/press-room/mediatek-develops-chip-utilizing-tsmcs-2nm-process-achieving-milestones-in-performance-andpower-efficiency",
+      "published_at": "2025-09-16",
+      "excerpt": "官方英文新闻稿（HSINCHU, Sept. 16, 2025）：称联发科是最早与台积电合作成功开发 N2P 制程芯片的公司之一，旗舰 SoC 已完成 tape-out，「volume production expected late next year」「The first chipset utilizing the new TSMC N2P process is expected to be available in late 2026」；给出 N2P 对比 N3E 约 +18% 同功耗性能、同速度约 -36% 功耗、逻辑密度 1.2x。这是「率先宣布达成 2nm」这句口径的原始出处。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "aging"
+      }
+    },
+    {
+      "source_id": "src-04",
+      "authority": "official",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "微博（vivo 官方微博）",
+      "origin_publisher": "vivo",
+      "title": "vivo X500 Pro 系列全球首发搭载 2nm 天玑9600 Pro 旗舰芯",
+      "url": "https://weibo.com/1809745371/5343441162605028",
+      "published_at": "2026-09-15",
+      "excerpt": "vivo 官方微博（页面显示发布时刻 2026-09-15 15:58）：「vivo 与 @联发科技官方微博 携手迈入全新2nm旗舰芯时代。vivo X500 Pro系列全球首发搭载2nm #天玑9600Pro旗舰芯#。」并列出联合研发/独家首发项：双超大核CPU架构（联合研发）、芯片级 AP Demura 2.0、专业 Log 视频硬件（满血 4K120fps 10bit Log 烧录直出）、超性能影像 NPU 2.0（60fps 追焦）、蓝图自研影像芯片（4K 杜比视界人像视频）、XDZ 高倍率视频超分。结尾「9月21日19:00，#vivo X500系列#全新发布！」。这是「首发」的一手官方出处，非媒体推测。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-05",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "上海证券报·中国证券网",
+      "origin_publisher": "上海证券报",
+      "title": "联发科发布面向智能体AI的旗舰移动平台天玑9600 Pro芯片",
+      "url": "https://www.cnstock.com/commonDetail/790463",
+      "published_at": "2026-09-15",
+      "excerpt": "上证报中国证券网（记者李兴彩，2026-09-15）：「9月15日，联发科在深圳召开『2026天玑旗舰芯片新品发布会』，正式发布了面向智能体AI的旗舰移动平台天玑9600 Pro。vivo X500 Pro系列将首发搭载该芯片。」并给出：基于台积电2nm制程、330亿晶体管、对比上代3nm性能提升14%、功耗下降23%；八核CPU；Arm G2-Ultra NX GPU。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-06",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "深圳新闻网",
+      "origin_publisher": "深圳新闻网",
+      "title": "MediaTek在深圳发布天玑9600系旗舰5G智能体AI芯，卓越AI重构强悍冷劲旗舰体验",
+      "url": "https://www.sznews.com/news/content/2026-09/15/content_32172657.htm",
+      "published_at": "2026-09-15",
+      "excerpt": "深圳新闻网（记者张俊达，2026-09-15）：称「9月15日，全球知名芯片公司联发科 MediaTek 在深圳举行天玑9600系列旗舰5G智能体AI芯片新品发布会」；复述官方规格（2nm、2+3+3 全大核 4.55/4.35/3.1GHz、34.5MB 缓存、LPDDR6+UFS 5.0、单核+17%多核+15%功耗-61%、双NPU、G2-Ultra NX、Imagiq 1290）。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-07",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "IT之家",
+      "origin_publisher": "IT之家",
+      "title": "联发科天玑 9600 Pro 旗舰芯片发布：2nm 工艺、4.55GHz 双超大核、120 帧光追手游",
+      "url": "https://www.ithome.com/1/002/612.htm",
+      "published_at": "2026-09-15",
+      "excerpt": "IT之家（9月15日，「从发布会现场获悉」）：行业首批搭载2nm、330亿+晶体管；CPU 对比天玑9500 单核+17%、多核+15%、AI 问答出词速度+40%；L2 缓存比天玑9500 +21%，L2+L3+SLC 共34.5MB；官方数据看 1080p 在线视频功耗下降48%；GPU 相比天玑9500 同功耗下性能+18%、峰值性能下功耗-24%、光追+18%；Always-On 端侧轻载模型功耗-40%；与 vivo 合作相机助手、与 OPPO 合作 LUMO 灵感构图、与《三角洲行动》解锁原生120帧光追。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-08",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "快科技（驱动之家）",
+      "origin_publisher": "快科技",
+      "title": "联发科首款2nm芯片天玑9600 Pro发布：最强天玑Soc vivo全球首发",
+      "url": "https://news.mydrivers.com/1/1151/1151272.htm",
+      "published_at": "2026-09-15",
+      "excerpt": "快科技（9月15日）：称天玑9600 Pro 为「行业首批采用台积电2nm制程的移动平台」，将由 vivo X500 系列首发搭载；对比3nm性能+14%、功耗-23%、330亿+晶体管；CPU 为 2×4.55GHz C2-Ultra（2MB L2）+3×4.35GHz（1MB L2）+3×3.10GHz（512KB L2），16MB 三级缓存、共34.5MB；「在实验室环境下」Geekbench 6.4 单核 4276 分（+17%）、多核 12650 分（+15%）；对比天玑9500 超大核功耗-37%、多核功耗-61%；《明日方舟：终末地》平均59fps、同帧率功耗较天玑9500 -30%；联合 vivo 落地「视频一键高光」。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-09",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "中关村在线",
+      "origin_publisher": "中关村在线",
+      "title": "联发科发布天玑9600 Pro：2nm工艺、全大核架构与LPDDR6/UFS5.0旗舰芯片",
+      "url": "https://m.zol.com.cn/article/12485052.html",
+      "published_at": "2026-09-15",
+      "excerpt": "中关村在线原创（2026-09-15 16:40）：业内首批采用台积电2纳米制程、晶体管超330亿颗；相较前代3纳米整体性能提升14%、功耗降低23%；34.5MB L2/L3/系统级缓存，L2 较天玑9500 +21%；首次兼容 LPDDR6 与 UFS 5.0（LPDDR6 带宽较 LPDDR5X +33%，UFS 5.0 顺序读写达双通道 UFS 4.0 的两倍）；2×C2-Ultra（4.55GHz）+6×C2-Pro。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-10",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "芯智讯",
+      "origin_publisher": "芯智讯",
+      "title": "联发科2nm旗舰芯片，天玑9600 Pro发布",
+      "url": "https://www.icsmart.cn/142035/",
+      "published_at": "2026-09-15",
+      "excerpt": "芯智讯（2026-09-15）：称天玑9600 Pro 为联发科首款2nm旗舰芯片；台北 2nm + DTCO，对比上代3nm 性能+14%、功耗-23%，330亿晶体管；2+3+3 八核全大核，为「全球首个采用 Arm C2 系列 CPU IP 的移动 SoC」，C2 集成第二代 SME2；超性能 NPU 1090 大模型预填充 +51%；对比天玑9500 超大核功耗最多-37%、多核功耗最多-61%，GeekBench 6.1 单核 4276（+17%）。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-11",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "今日头条（智东西）",
+      "origin_publisher": "智东西",
+      "title": "联发科2nm旗舰芯天玑9600 Pro发布，祭出AI原生架构大招，瞄准智能体猛攻",
+      "url": "https://www.toutiao.com/article/7685696941270778404/",
+      "published_at": "2026-09-15",
+      "excerpt": "智东西（作者云鹏，编辑心缘，标注「9月15日深圳现场报道」）：记录联发科技董事、总经理暨营运长陈冠州在发布会上的行业口径——GAI 正成为半导体行业核心驱动力，2027年全球半导体行业 TAM 预估达 11.4 万亿元人民币；Token 经济时代来临，2030年预估全球每月 Tokens 消耗量达 120 千万亿、增长约 24 倍。同稿复述 9600 Pro 规格与 9600M 的发布。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-12",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "网易新闻（华尔街见闻官方号）",
+      "origin_publisher": "华尔街见闻",
+      "title": "2nm手机芯片竞争扩围，联发科天玑9600 Pro入场",
+      "url": "https://www.163.com/dy/article/L6TCOVQQ05198NMR.html",
+      "published_at": "2026-09-15",
+      "excerpt": "华尔街见闻（2026-09-15 22:43）：称「作为联发科首款2nm旗舰手机芯片」；vivo 已宣布 X500 Pro 系列全球首发，OPPO Find 系列产品负责人卓世杰同日确认 Find X10 Pro Max 将搭载，vivo X500 与 OPPO Find X10 分别于9月21日和22日发布；「据联发科实验室测试」单核/多核最高 +17%/+15%、多核峰值功耗 -61%，GPU 峰值性能 +27%、峰值功耗 -24%、光追 +18%；NPU 1090 预填充 +51%、单位功耗生成效率最高 +55%、端侧支持最高 300 亿参数 MoE。关键对照：在联发科之前，三星已将 2nm Exynos 2600 用于 Galaxy S26 系列部分版本，苹果也发布了采用 2nm 工艺的 A20 Pro。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-13",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "今日头条（新京报贝壳财经）",
+      "origin_publisher": "新京报",
+      "title": "vivo X500 Pro系列官宣全球首发搭载天玑9600 Pro旗舰芯片",
+      "url": "https://www.toutiao.com/article/7685699372651840009/",
+      "published_at": "2026-09-15",
+      "excerpt": "新京报贝壳财经（记者程靓，2026-09-15 17:59）：在发布会上，vivo 高级副总裁、首席技术官施玉坚表示，9月21日即将发布的 vivo X500 Pro 系列将全球首发搭载 2nm 天玑9600 Pro；施玉坚称 vivo 率先提出双超大核 CPU 架构设计思路，与联发科历经三年联合研发；记者另从发布会获悉，9月22日 OPPO Find X10 系列正式发布，Find X10 Pro Max 也将搭载天玑9600 Pro。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-14",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "Notebookcheck",
+      "origin_publisher": "Notebookcheck",
+      "title": "MediaTek Dimensity 9600 Pro benchmarks are in: Middling performance gains but good efficiency boost",
+      "url": "https://www.notebookcheck.net/MediaTek-Dimensity-9600-Pro-benchmarks-are-in-Middling-performance-gains-but-good-efficiency-boost.1400235.0.html",
+      "published_at": "2026-09-16",
+      "excerpt": "英文独立媒体（称芯片「unveiled … yesterday」，即 9/15）：明确测试「by Chinese outlet Xiaobai's Tech Reviews（小白测评）」在「MediaTek's prototype machine」上完成，因「the Dimensity 9600 is not yet available on any consumer models」；Geekbench 6 单核 4,216 / 多核 12,765，整体约 +19%；CPU 每瓦性能最多比天玑9500 高约 40%；GPU Mali-G2 Ultra NX 在 3DMark WildLife Extreme 9,245 分、光追 Solar Bay Extreme 3,104 分，约比天玑9500 高 15%，但满载时能效略低于上一代、同性能下最多省 50% 功耗；并明确指出该芯片是「the second of its kind to be built on TSMC's N2 node—after Apple's A20 Pro」。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-15",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "GSMArena",
+      "origin_publisher": "GSMArena",
+      "title": "MediaTek Dimensity 9600M is also official",
+      "url": "https://www.gsmarena.com/mediatek_dimensity_9600m_is_also_official-news-74657.php",
+      "published_at": "2026-09-17",
+      "excerpt": "GSMArena（Michail，2026-09-17）：称 9600M「is essentially a repackaged Dimensity 9500, fabbed on TSMC's 3nm N3P process with identical components」，列出规格表——Node 3nm；1×Arm C1-Ultra（2MB L2，最高 4.21GHz）+3×C1-Premium（1MB L2）+4×C1-Pro（512KB L2）；16MB L3、10MB SLC；LPDDR5X 10667；UFS 4.1（4-lane）；Arm Mali-G1 Ultra MC12；NPU 990；Wi-Fi 7 最高 7.3Gbps；蓝牙 6.0；最高 320MP 相机；8K60/4K120。另称 9600M 获得最新的 Agentic AI Engine 与 Dimensity Scheduling Engine，首批 9600M 手机预计本季度上市，vivo X500 与 OPPO Find X10 或为首批。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-16",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "GSMArena",
+      "origin_publisher": "GSMArena",
+      "title": "vivo X500 Pro and X500 Pro Max will be the first to use MediaTek's Dimensity 9600 Pro",
+      "url": "https://www.gsmarena.com/vivo_x500_pro_and_x500_pro_max_will_be_the_first_to_use_mediateks_dimensity_9600_pro-news-74632.php",
+      "published_at": "2026-09-16",
+      "excerpt": "GSMArena（Vlad，2026-09-16）：OPPO 已确认 Find X10 Pro Max 将首批采用，但不会是最先发布的机型；vivo 于 9月21日发布 X500 Pro 与 X500 Pro Max，OPPO 于 9月22日发布 Find X10 Pro Max，因此 X500 Pro 系列将是首款正式发布的搭载天玑9600 Pro 的机型。文中注明 vivo「through its official Weibo account」公布了该消息（并给出微博原文链接）。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-17",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "Frandroid",
+      "origin_publisher": "Frandroid",
+      "title": "MediaTek dévoile le Dimensity 9600 Pro : la première puce en 2 nm pour Android",
+      "url": "https://www.frandroid.com/produits-android/3248283_mediatek-devoile-le-dimensity-9600-pro-la-premiere-puce-en-2-nm-pour-android",
+      "published_at": "2026-09-16",
+      "excerpt": "法文独立媒体（2026-09-16）：称 9600 Pro 是「le premier processeur mobile gravé en 2 nm destiné aux smartphones Android」，但「reste devancé par la puce A20 Pro des iPhone 18 Pro」，并明确「Apple a dégainé la première avec sa puce A20 Pro, gravée elle aussi en 2 nm」，联发科只是「le premier à annoncer une puce Android gravée en 2 nm」；高通 Snapdragon 8 Elite Gen 6 预计本月底以 2nm 回应。关键冲突点：文中写 Dimensity 9600M「elle aussi gravée en 2 nm」（也是 2nm），并称 9600M 为「1+3+4」架构、LPDDR5X。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-18",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "网易新闻（小白测评号）",
+      "origin_publisher": "小白测评",
+      "title": "【SoC】天玑9600Pro芯片跑分曝光",
+      "url": "https://www.163.com/dy/article/L56PPNQN0511AO1U.html",
+      "published_at": "2026-08-25",
+      "excerpt": "小白测评（2026-08-25，发布前泄露）：8月25日型号 vivo V2610（X500 Pro Max 工程机）现身 Geekbench 数据库，Geekbench 6.7.1 单核最高 2653、多核 7756；芯片代号 MT6995(ENG)，2+3+3 三丛集，2×4.55GHz + 3×4.35GHz + 3×3.1GHz，GPU Mali-G2-Ultra-NX MC12，「工程测试阶段 GPU 频率暂时锁在 2.9GHz，没有跑满满血状态」。属发布前泄露数据，不可用于评估量产性能。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "aging"
+      }
+    },
+    {
+      "source_id": "src-19",
+      "authority": "reliable_independent",
+      "verification_state": "verified",
+      "heat_only": false,
+      "publisher": "KOCPC 电脑王阿达（英文版）",
+      "origin_publisher": "KOCPC",
+      "title": "vivo secures the global debut of the Dimensity 9600 Pro, with the vivo X500 Pro series set to debut in Shanghai on September 21.",
+      "url": "https://en.kocpc.com.tw/archives/25559",
+      "published_at": "2026-09-18",
+      "excerpt": "台湾科技媒体（文中日期标注 2026-09-18，正文称 vivo 于 9月16日正式宣布，与微博原始发布时刻 2026-09-15 15:58 存在一天差）：称 vivo X500 Pro 系列为全球首发天玑9600 Pro，将「officially launch in Shanghai on September 21, 2026」；OPPO Find X10 Pro Max 亦将采用，vivo 比 OPPO 早一天取得全球首发；并称该芯片「making it MediaTek's first 2nm smartphone chip」，LPDDR6 同频有效带宽 +33%、UFS 5.0 读写速度为上一代两倍。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "event_window",
+        "status_at_publish": "fresh"
+      }
+    },
+    {
+      "source_id": "src-20",
+      "authority": "unknown",
+      "verification_state": "unverified",
+      "heat_only": false,
+      "publisher": "腾讯新闻（搜索快照页，无署名作者）",
+      "origin_publisher": "未知（腾讯搜索快照转载，未标注原始机构）",
+      "title": "联发科发布天玑9600 Pro：2nm制程与AI原生架构推动端侧智能体落地",
+      "url": "https://so.html5.qq.com/page/real/search_news?docid=70000021_0226aab2f0402552",
+      "published_at": "2026-09-17",
+      "excerpt": "腾讯搜索快照页（2026-09-17，页面无作者、无原始机构署名）：文中称「联发科在现场披露，公司已连续六年保持全球智能手机SoC市场份额第一，天玑9600Pro则拿下了台积电2纳米制程的首批产能席位」；又称 9600 Pro「跳过了台积电第一代N2制程，直接采用N2P工艺，而苹果同期规划的A20Pro据称仍停留在N2节点」；给出 Geekbench 6.4 单核 4276 / 多核 12650、3DMark Solar Bay Extreme 3029（天玑9500 为 2570）。因无署名与原始机构、且 N2P/A20 Pro 节点说法与 Frandroid、Notebookcheck 口径冲突，仅作线索、不作为事实来源。",
+      "freshness": {
+        "observed_at": "2026-09-18",
+        "policy": "manual_review",
+        "status_at_publish": "unknown"
+      }
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "claim-01",
+      "topic_id": "topic-01",
+      "text": "2026年9月15日，联发科（MediaTek）正式发布天玑9600系列旗舰5G智能体AI芯片，包含定位顶级旗舰的天玑9600 Pro与主打旗舰体验普及的天玑9600M两款产品。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-01", "src-02", "src-05"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把天玑9600M说成已完成终端量产上市的机型", "不要把「发布芯片」说成芯片已经大批量出货"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-02",
+      "topic_id": "topic-01",
+      "text": "本次「2026天玑旗舰芯片新品发布会」在深圳举行（多家媒体现场报道）；联发科中文官方新闻稿未标注发布会地点，英文官方新闻稿的署地为新竹。",
+      "evidence_status": "confirmed_two_reliable",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-05", "src-06", "src-07"],
+      "material_refs": [],
+      "claims_to_verify": ["英文稿署地新竹与中文媒体的深圳现场报道是否为同一场发布会的两种表述（是否存在深圳发布会+台北总部发稿的并行安排）"],
+      "do_not_claim": ["不要只写「新竹发布」或只写「深圳发布」而不交代两种口径并存"],
+      "fact_sources_min": 2,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-03",
+      "topic_id": "topic-01",
+      "text": "天玑9600 Pro采用台积电2nm制程，集成超过330亿个晶体管；联发科称相较上一代3nm制程，性能提升14%、功耗下降23%。",
+      "evidence_status": "confirmed_two_reliable",
+      "wording_policy": "attribute",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-05", "src-08", "src-09"],
+      "material_refs": [],
+      "claims_to_verify": ["14%/23%的测试条件（同功耗比性能，还是同性能比功耗）与对比基准是否为天玑9500", "330亿晶体管的口径是「超过330亿」还是精确值"],
+      "do_not_claim": ["不要把14%/23%说成第三方实测结果", "不要把330亿晶体管当作精确计数"],
+      "fact_sources_min": 2,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-04",
+      "topic_id": "topic-01",
+      "text": "天玑9600 Pro是联发科首款采用2nm制程的手机芯片；联发科在官方英文稿中把自己表述为「率先宣布达成2nm这一门槛的公司」，该口径来自其2025年9月宣布用台积电N2P成功开发芯片、当时预计2026年底量产的公告。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-01", "src-02", "src-03"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「率先宣布达成2nm」说成「全球首款2nm手机芯片」", "不要把「联发科首款2nm」扩大为「业界首款2nm SoC」"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-05",
+      "topic_id": "topic-01",
+      "text": "天玑9600 Pro的CPU为2+3+3全大核架构：2颗最高主频4.55GHz的C2-Ultra超大核、3颗4.35GHz的C2-Pro大核、3颗3.1GHz的C2-Pro大核，配备总计34.5MB的缓存（L2+L3+SLC），其中L2缓存较上一代提升21%。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-01", "src-02", "src-09"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把34.5MB说成单一层级缓存容量（它是L2+L3+SLC合计）"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-06",
+      "topic_id": "topic-01",
+      "text": "天玑9600 Pro率先支持LPDDR6内存与UFS 5.0闪存；官方口径为LPDDR6同频率下有效带宽较LPDDR5X提升33%，UFS 5.0的顺序读写速度约为双通道UFS 4.0的两倍。",
+      "evidence_status": "confirmed_two_reliable",
+      "wording_policy": "attribute",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-05", "src-08", "src-09"],
+      "material_refs": [],
+      "claims_to_verify": ["「33%」与「2倍」的对比基准（LPDDR5X 10667 对比哪一档？UFS 5.0 对比双通道 UFS 4.0 还是单通道）", "首批机型是否标配 LPDDR6+UFS 5.0，还是仅顶配版本"],
+      "do_not_claim": ["不要说所有搭载该芯片的手机都会用上LPDDR6与UFS 5.0", "不要把33%/2倍说成独立实测成绩"],
+      "fact_sources_min": 2,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-07",
+      "topic_id": "topic-01",
+      "text": "联发科的性能口径是：相较上一代，CPU单核性能提升17%、多核性能提升15%；在达到上一代峰值性能时，多核功耗下降61%、超大核功耗下降37%。媒体把「上一代」明确为天玑9500。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-01", "src-02", "src-07"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「多核功耗下降61%」说成日常使用省电61%", "不要把官方实验室数据当作第三方实测结论"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-08",
+      "topic_id": "topic-01",
+      "text": "关于「多核功耗降61%」的口径出处：官方英文新闻稿的脚注写明该数据来自联发科实验室对演示样机的测试；中文稿同样标注「文内数据来自 MediaTek 实验室」；媒体把对比基准明确为天玑9500，并把条件限定为「达到上一代峰值性能时」的功耗。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-02", "src-07", "src-08"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把61%写成已由独立第三方复现的数据", "不要省略「峰值性能下」这一限定条件"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-09",
+      "topic_id": "topic-01",
+      "text": "GPU为Arm Mali-G2 Ultra NX，联发科称其峰值性能较上一代提升27%、峰值性能下功耗下降24%、光线追踪性能提升18%，游戏最高支持185帧输出。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-01", "src-02", "src-12"],
+      "material_refs": [],
+      "claims_to_verify": ["「峰值性能提升27%」具体对应的 3DMark 子项（有媒体引用 Steel Nomad Light 口径给出更小的数字）"],
+      "do_not_claim": ["不要把185帧说成主流游戏的实际运行帧率", "不要把27%与「同功耗下性能提升18%」混为同一口径"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-10",
+      "topic_id": "topic-01",
+      "text": "天玑9600 Pro采用双NPU架构：第二代超能效NPU配合低功耗传感器中枢，使Always-On端侧轻载模型功耗下降40%；超性能NPU 1090的大语言模型预填充（Prefill）性能较上一代提升51%、每瓦特生成词元数最高提升55%，支持端侧运行最高30B参数的MoE混合专家模型。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "attribute",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-01", "src-02", "src-10"],
+      "material_refs": [],
+      "claims_to_verify": ["30B MoE的端侧实际生成速度（出词速度）与内存占用", "「支持」是否等于已有可用的端侧应用"],
+      "do_not_claim": ["不要把「支持30B模型」说成手机上已能流畅运行任意30B模型", "不要把预填充性能提升51%等同于整体推理速度提升51%"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-11",
+      "topic_id": "topic-01",
+      "text": "影像与显示/连接规格：集成Imagiq 1290 ISP，支持60fps专业运动级追焦、4K240原生直出慢动作、4K120电影级Log原色视频直出与17EV高动态范围；显示侧支持多帧OverDrive面板响应补偿与全链路BT.2020（可视色彩丰富度较DCI-P3提升38%），并支持新一代H.266硬件解码（较软解最多节省23%功耗）。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-01", "src-06"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把17EV说成实际拍摄中任何场景都能达到的动态范围", "不要说H.266硬解在全部平台上都能省23%功耗"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-12",
+      "topic_id": "topic-01",
+      "text": "「业内首款2nm」的说法站不住。多家外媒指出，苹果A20 Pro已采用2nm工艺并搭载于iPhone 18 Pro与首款折叠机型iPhone Duo、已经开售，早于天玑9600 Pro；另有报道称三星已把2nm的Exynos 2600用于Galaxy S26系列部分版本。因此联发科准确的定位是「首个宣布达成2nm门槛」以及「安卓阵营首款2nm移动平台」，而不是全行业首款2nm芯片。",
+      "evidence_status": "conflicting",
+      "wording_policy": "hedge",
+      "freshness_requirement": "manual_review",
+      "source_ids": ["src-12", "src-14", "src-17"],
+      "material_refs": [],
+      "claims_to_verify": ["苹果A20 Pro与三星Exynos 2600各自的具体节点（N2 / N2P / SF2）与开售时间，需以苹果、三星官方规格页复核", "「首款」应限定在哪一范围（联发科内部 / 安卓阵营 / 全行业）"],
+      "do_not_claim": ["不要直接说「天玑9600 Pro是全球首款2nm手机芯片」", "不要反过来断言联发科的2nm工艺落后于竞品"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-13",
+      "topic_id": "topic-01",
+      "text": "官方实验室跑分与第三方实测跑分不一致：官方口径为Geekbench 6.4单核4276分、多核12650分；第三方（小白测评）在联发科工程样机上测得Geekbench 6单核4216分、多核12765分。两者单核相差约60分、多核互有高低。",
+      "evidence_status": "conflicting",
+      "wording_policy": "hedge",
+      "freshness_requirement": "manual_review",
+      "source_ids": ["src-08", "src-14"],
+      "material_refs": [],
+      "claims_to_verify": ["两组成绩的 Geekbench 版本（6.4 vs 6）与散热条件是否可比", "官方4276分是否为「实验室环境」非标准散热条件下的成绩"],
+      "do_not_claim": ["不要把两组跑分取平均或只挑高的一组", "不要把工程机跑分当作量产机成绩"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-14",
+      "topic_id": "topic-01",
+      "text": "第三方实测（由中文评测机构「小白测评」在联发科工程样机上完成，由Notebookcheck转述）：Geekbench 6单核4216分、多核12765分，整体较天玑9500提升约19%；CPU每瓦性能最多比天玑9500高约40%；GPU在3DMark WildLife Extreme得9245分、光追Solar Bay Extreme得3104分，约比天玑9500高15%；但GPU满载时能效略低于上一代，在同性能下最多可省50%功耗。自媒体口径还给出官方称工程机《原神》864P@60fps功耗较天玑9500下降10%。",
+      "evidence_status": "creator_primary",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-14"],
+      "material_refs": [],
+      "claims_to_verify": ["小白测评原始测试页面/视频的完整条件（室温、散热、Geekbench版本）", "「工程样机」的具体型号与是否为量产散热方案"],
+      "do_not_claim": ["不要把工程机成绩当作量产机续航与发热结论", "不要把「最多省50%功耗」说成常态"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 1
+    },
+    {
+      "claim_id": "claim-15",
+      "topic_id": "topic-01",
+      "text": "vivo X500 Pro系列全球首发搭载天玑9600 Pro，由vivo官方微博宣布（微博页面显示发布时刻为2026-09-15 15:58），发布会定档9月21日19:00，媒体多称发布地在上海；vivo高级副总裁兼首席技术官施玉坚在联发科发布会上介绍了该合作，并称双超大核CPU架构的设计思路由vivo率先提出、双方历经三年联合研发。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-04", "src-13", "src-19"],
+      "material_refs": [],
+      "claims_to_verify": ["vivo官方微博的发布时间在部分外媒笔下被写作9月16日，需以微博原始时间戳为准"],
+      "do_not_claim": ["不要把「全球首发」说成全球首款上市的2nm手机（该表述涉及竞品节点）", "不要把vivo的「全球首发」扩大为「独家」——OPPO同日确认也将首批搭载"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-16",
+      "topic_id": "topic-01",
+      "text": "除vivo外，OPPO也确认Find X10 Pro Max将首批搭载天玑9600 Pro，OPPO Find X10系列定档9月22日发布，比vivo晚一天。",
+      "evidence_status": "confirmed_two_reliable",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-13", "src-16"],
+      "material_refs": [],
+      "claims_to_verify": ["OPPO Find X10 系列9月22日是否同时发布 X10E 与标准版"],
+      "do_not_claim": ["不要把OPPO说成首发（发布时间晚于vivo一天）", "不要把「首批搭载」说成独家搭载"],
+      "fact_sources_min": 2,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-17",
+      "topic_id": "topic-01",
+      "text": "天玑9600M的制程口径存在明显矛盾：GSMArena称9600M本质上是天玑9500的封装改名版，采用台积电3nm N3P；法文媒体Frandroid则称9600M「同样是2nm」。联发科官方新闻稿没有给出9600M的制程参数，因此目前无法判定哪一方正确。",
+      "evidence_status": "conflicting",
+      "wording_policy": "hedge",
+      "freshness_requirement": "manual_review",
+      "source_ids": ["src-02", "src-15", "src-17"],
+      "material_refs": [],
+      "claims_to_verify": ["联发科官方产品页（Dimensity 9600M）标注的节点参数", "9600M 的 CPU 是否为 C1 系列（与天玑9500 同代）"],
+      "do_not_claim": ["不要说天玑9600M是2nm", "也不要说天玑9600M确定是3nm"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-18",
+      "topic_id": "topic-01",
+      "text": "天玑9600M的公开规格（单一来源GSMArena口径，未获第二家独立机构证实）：1+3+4全大核（1×Arm C1-Ultra最高4.21GHz＋3×C1-Premium＋4×C1-Pro）、16MB L3＋10MB SLC、LPDDR5X 10667、UFS 4.1、Arm Mali-G1 Ultra MC12 GPU、MediaTek NPU 990，并加入最新的天玑AI智能体化引擎与天玑调度引擎。",
+      "evidence_status": "unverified",
+      "wording_policy": "hedge",
+      "freshness_requirement": "manual_review",
+      "source_ids": ["src-15"],
+      "material_refs": [],
+      "claims_to_verify": ["联发科官方9600M规格页（此前尝试访问 /products/smartphones/mediatek-dimensity-9600m 返回404，需换用官方正确路径复核）", "9600M 是否与天玑9500 共用同一套核心 IP"],
+      "do_not_claim": ["不要把这套规格当作联发科官方确认的参数", "不要据此推断9600M的性能上限或售价"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 1
+    },
+    {
+      "claim_id": "claim-19",
+      "topic_id": "topic-01",
+      "text": "联发科官方新闻稿未公布天玑9600M的完整规格与制程，仅表示搭载天玑9600 Pro与9600M的智能手机「将于近期上市」（英文稿为「expected to launch this quarter」）。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-01", "src-02"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「本季度内上市」当成已确定的具体发售日期"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-20",
+      "topic_id": "topic-01",
+      "text": "联发科技董事、总经理暨营运长陈冠州在发布会上给出的行业判断（第一方口径）：2027年全球半导体行业可触达市场（TAM）预估达11.4万亿元人民币；Token经济时代来临，2030年全球每月Token消耗量预估达120千万亿、增长约24倍。",
+      "evidence_status": "creator_primary",
+      "wording_policy": "attribute",
+      "freshness_requirement": "manual_review",
+      "source_ids": ["src-11"],
+      "material_refs": [],
+      "claims_to_verify": ["11.4万亿元人民币所对应的美元口径与统计范围（是否为全球半导体整体TAM）", "「120千万亿」的原始英文数量级表述（是否指 120 quadrillion tokens/月）"],
+      "do_not_claim": ["不要把厂商对TAM与Token消耗的预测说成已发生的统计", "不要把11.4万亿人民币与联发科自身营收混为一谈"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 1
+    },
+    {
+      "claim_id": "claim-21",
+      "topic_id": "topic-01",
+      "text": "截至2026年9月18日，天玑9600 Pro的能效与性能数据全部来自联发科实验室/发布会口径或工程样机实测：首款搭载该芯片的量产机型（vivo X500 Pro系列）尚未发布（定档9月21日），该芯片「not yet available on any consumer models」，因此尚无量产机实测与真实续航数据可供验证。",
+      "evidence_status": "confirmed_two_reliable",
+      "wording_policy": "assert",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-14", "src-16"],
+      "material_refs": [],
+      "claims_to_verify": ["9月21日vivo X500 Pro系列发布后是否有量产机独立实测"],
+      "do_not_claim": ["不要在9月21日之前断言该芯片的真实续航与发热表现", "不要把「工程机锁频」阶段的任何数据当作最终结论"],
+      "fact_sources_min": 2,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-22",
+      "topic_id": "topic-01",
+      "text": "所谓「AI原生架构」，联发科的官方定义是把CPU、GPU、NPU、ISP等异构计算单元做系统级协同（天玑智算融合架构＋升级后的天玑调度引擎），在算力、电源与内存之间统一调度，而不是单一计算单元的峰值堆叠。",
+      "evidence_status": "confirmed_official",
+      "wording_policy": "assert",
+      "freshness_requirement": "evergreen",
+      "source_ids": ["src-01", "src-07", "src-09"],
+      "material_refs": [],
+      "claims_to_verify": [],
+      "do_not_claim": ["不要把「AI原生架构」当成可量化的评测指标", "不要说该架构已带来可验证的整机续航提升"],
+      "fact_sources_min": 1,
+      "fact_sources_present": 3
+    },
+    {
+      "claim_id": "claim-23",
+      "topic_id": "topic-01",
+      "text": "芯片级的终端联合落地：联发科称与vivo合作了相机助手与「视频一键高光」（端侧多模态大模型自动识别高光片段并一键成片）、与OPPO合作了LUMO「灵感构图」（场景智能识别与自动构图），并联合《三角洲行动》解锁原生120帧光追手游，同时列出《暗黑破坏神：不朽》《暗区突围》等光追手游合作。",
+      "evidence_status": "confirmed_two_reliable",
+      "wording_policy": "attribute",
+      "freshness_requirement": "fresh",
+      "source_ids": ["src-07", "src-08"],
+      "material_refs": [],
+      "claims_to_verify": ["这些合作功能是否已随首批机型上线，还是随生态伙伴后续 OTA", "「原生120帧光追」对应的具体机型与画质档位"],
+      "do_not_claim": ["不要把已宣布的合作功能说成用户现在就能用上", "不要把厂商合作宣传当成独立体验结论"],
+      "fact_sources_min": 2,
+      "fact_sources_present": 2
+    },
+    {
+      "claim_id": "claim-24",
+      "topic_id": "topic-01",
+      "text": "发布前的工程机泄露跑分明显低于发布后工程机成绩，不能用于评估最终性能：2026年8月24日型号vivo V2610的工程机现身Geekbench数据库，芯片代号MT6995(ENG)，Geekbench 6.7.1单核最高2653分、多核7756分，且当时GPU频率被锁在约2.9GHz、「没有跑满满血状态」。",
+      "evidence_status": "unverified",
+      "wording_policy": "hedge",
+      "freshness_requirement": "manual_review",
+      "source_ids": ["src-18"],
+      "material_refs": [],
+      "claims_to_verify": ["Geekbench 数据库原始条目是否仍可查（vivo V2610 / MT6995 ENG）", "锁频2.9GHz是否为工程阶段策略而非最终GPU频率"],
+      "do_not_claim": ["不要用2653/7756推断天玑9600 Pro的量产性能", "不要把泄露数据说成联发科公布的跑分"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 1
+    },
+    {
+      "claim_id": "claim-25",
+      "topic_id": "topic-01",
+      "text": "以下两条只会出现在无署名转载稿中、未获一手来源证实，本期不可采用：（1）联发科「已连续六年保持全球智能手机SoC市场份额第一」；（2）天玑9600 Pro「拿下了台积电2纳米制程的首批产能席位」。同一篇稿件还称9600 Pro跳过初代N2直接采用N2P、而苹果A20 Pro「据称」仍停留在N2节点，该说法与Frandroid、Notebookcheck的报道口径冲突。",
+      "evidence_status": "unverified",
+      "wording_policy": "prohibit",
+      "freshness_requirement": "manual_review",
+      "source_ids": ["src-20"],
+      "material_refs": [],
+      "claims_to_verify": ["联发科市占率第一的原始出处（是否为 Counterpoint / IDC 等第三方机构统计，以及统计年份）", "「台积电2纳米首批产能」是否有台积电或联发科的一手表述"],
+      "do_not_claim": ["不要说联发科「连续六年市占第一」", "不要说联发科拿下台积电2nm首批产能", "不要断言苹果A20 Pro停留在N2节点"],
+      "fact_sources_min": 0,
+      "fact_sources_present": 0
+    }
+  ],
+  "topics": {
+    "keyword_graph": {
+      "seed": "天玑9600Pro",
+      "expanded": [
+        "天玑9600",
+        "联发科 天玑 新芯片",
+        "台积电 2nm 芯片",
+        "vivo X500 Pro 首发 天玑",
+        "手机芯片 功耗 能效"
+      ],
+      "subject_terms": [
+        "天玑9600Pro",
+        "天玑9600M",
+        "联发科",
+        "MediaTek",
+        "vivo X500 Pro",
+        "OPPO Find X10 Pro Max"
+      ],
+      "event_terms": [
+        "2026天玑旗舰芯片新品发布会",
+        "深圳发布",
+        "2nm 制程",
+        "全大核 CPU",
+        "LPDDR6",
+        "UFS 5.0",
+        "多核功耗降61%",
+        "9月21日 vivo 发布会"
+      ],
+      "keywords_requested": [
+        "天玑9600",
+        "天玑9600Pro",
+        "联发科 新芯片",
+        "2nm 芯片",
+        "vivo X500 Pro"
+      ],
+      "keywords_used": [
+        "天玑9600",
+        "天玑9600Pro",
+        "联发科 新芯片",
+        "联发科 发布会",
+        "2nm 芯片",
+        "台积电2nm",
+        "手机芯片 功耗",
+        "vivo X500 Pro",
+        "OPPO Find X10",
+        "芯片评测 跑分"
+      ],
+      "keywords_truncated": false
+    },
+    "topic_candidates": [
+      {
+        "topic_id": "topic-01",
+        "title": "天玑9600Pro",
+        "keywords": ["天玑9600", "天玑9600Pro", "联发科 新芯片", "2nm 芯片", "vivo X500 Pro", "手机芯片 功耗"],
+        "selection_basis": "agent_research_ledger",
+        "producer_proposal": true
+      },
+      {
+        "topic_id": "topic-02",
+        "title": "2nm芯片竞赛：联发科、苹果、三星谁先落地",
+        "keywords": ["2nm 芯片", "台积电2nm", "苹果 A20 Pro", "三星 Exynos 2600", "手机芯片 制程"],
+        "selection_basis": "agent_research_ledger",
+        "producer_proposal": true
+      },
+      {
+        "topic_id": "topic-03",
+        "title": "vivo X500 Pro 首发 2nm 天玑芯片",
+        "keywords": ["vivo X500 Pro", "vivo 发布会", "天玑9600Pro", "首发 芯片", "vivo 新机"],
+        "selection_basis": "agent_research_ledger",
+        "producer_proposal": true
+      }
+    ],
+    "selected_topic": {
+      "topic_id": "topic-01",
+      "title": "天玑9600Pro",
+      "keywords": ["天玑9600", "天玑9600Pro", "联发科 新芯片", "2nm 芯片", "vivo X500 Pro", "手机芯片 功耗"],
+      "selection_basis": "agent_research_ledger",
+      "producer_proposal": true
+    },
+    "argument_graph": {
+      "topic_id": "topic-01",
+      "nodes": [
+        {"claim_id": "claim-01", "dim": "event_core", "claim": "2026年9月15日，联发科正式发布天玑9600系列旗舰5G智能体AI芯片，包含天玑9600 Pro与天玑9600M两款产品。", "source_candidate_ids": ["src-01", "src-02", "src-05"]},
+        {"claim_id": "claim-02", "dim": "evidence_detail", "claim": "本次发布会在深圳举行（多家媒体现场报道）；官方中文稿未标注地点，英文稿署地为新竹。", "source_candidate_ids": ["src-05", "src-06", "src-07"]},
+        {"claim_id": "claim-03", "dim": "key_number", "claim": "天玑9600 Pro采用台积电2nm制程，集成超过330亿个晶体管；官方称相较上代3nm性能提升14%、功耗下降23%。", "source_candidate_ids": ["src-05", "src-08", "src-09"]},
+        {"claim_id": "claim-04", "dim": "event_core", "claim": "天玑9600 Pro是联发科首款2nm手机芯片；联发科官方把自己表述为「率先宣布达成2nm门槛」的公司。", "source_candidate_ids": ["src-01", "src-02", "src-03"]},
+        {"claim_id": "claim-05", "dim": "key_number", "claim": "CPU为2+3+3全大核：2×4.55GHz C2-Ultra＋3×4.35GHz C2-Pro＋3×3.1GHz C2-Pro，缓存合计34.5MB（L2+L3+SLC），L2较上代提升21%。", "source_candidate_ids": ["src-01", "src-02", "src-09"]},
+        {"claim_id": "claim-06", "dim": "key_number", "claim": "率先支持LPDDR6内存与UFS 5.0闪存；官方口径为LPDDR6同频带宽较LPDDR5X提升33%、UFS 5.0顺序读写约为双通道UFS 4.0的两倍。", "source_candidate_ids": ["src-05", "src-08", "src-09"]},
+        {"claim_id": "claim-07", "dim": "key_number", "claim": "官方性能口径：单核+17%、多核+15%，达到上代峰值性能时多核功耗-61%、超大核功耗-37%（对比对象为天玑9500）。", "source_candidate_ids": ["src-01", "src-02", "src-07"]},
+        {"claim_id": "claim-08", "dim": "evidence_detail", "claim": "「多核功耗降61%」来自联发科实验室的演示样机测试（官方稿脚注与中文稿均注明），条件限定为「达到上一代峰值性能时」。", "source_candidate_ids": ["src-02", "src-07", "src-08"]},
+        {"claim_id": "claim-09", "dim": "key_number", "claim": "GPU为Mali-G2 Ultra NX，官方称峰值性能+27%、峰值功耗-24%、光追+18%，最高支持185帧游戏输出。", "source_candidate_ids": ["src-01", "src-02", "src-12"]},
+        {"claim_id": "claim-10", "dim": "key_number", "claim": "双NPU：第二代超能效NPU使Always-On轻载模型功耗-40%；NPU 1090大模型预填充+51%、每瓦特生成词元数最高+55%、支持30B MoE端侧运行。", "source_candidate_ids": ["src-01", "src-02", "src-10"]},
+        {"claim_id": "claim-11", "dim": "key_number", "claim": "Imagiq 1290 ISP，支持60fps追焦、4K240原生慢动作、4K120 Log直出、17EV；显示/解码侧含全链路BT.2020与H.266硬解。", "source_candidate_ids": ["src-01", "src-06"]},
+        {"claim_id": "claim-12", "dim": "uncertainty", "claim": "「业内首款2nm」的说法站不住：苹果A20 Pro已以2nm开售、早于天玑9600 Pro，三星Exynos 2600亦已用于Galaxy S26部分版本；准确说法是首个宣布达成2nm与安卓阵营首款2nm平台。", "source_candidate_ids": ["src-12", "src-14", "src-17"]},
+        {"claim_id": "claim-13", "dim": "uncertainty", "claim": "官方实验室跑分（Geekbench 6.4 单核4276/多核12650）与第三方工程机实测（单核4216/多核12765）不一致。", "source_candidate_ids": ["src-08", "src-14"]},
+        {"claim_id": "claim-14", "dim": "evidence_detail", "claim": "第三方实测（小白测评在联发科工程样机上完成、Notebookcheck转述）：Geekbench 6 4216/12765，CPU每瓦性能最多高约40%，GPU WildLife Extreme 9245、Solar Bay Extreme 3104，但满载能效略低于上代。", "source_candidate_ids": ["src-14"]},
+        {"claim_id": "claim-15", "dim": "event_core", "claim": "vivo X500 Pro系列由vivo官方微博宣布全球首发搭载天玑9600 Pro，发布会定档9月21日19:00（媒体多称上海）。", "source_candidate_ids": ["src-04", "src-13", "src-19"]},
+        {"claim_id": "claim-16", "dim": "evidence_detail", "claim": "OPPO亦确认Find X10 Pro Max将首批搭载，Find X10系列定档9月22日发布，比vivo晚一天。", "source_candidate_ids": ["src-13", "src-16"]},
+        {"claim_id": "claim-17", "dim": "uncertainty", "claim": "天玑9600M制程口径矛盾：GSMArena称其为天玑9500的3nm N3P封装改名版，Frandroid称其也是2nm；联发科官方稿未给出9600M制程。", "source_candidate_ids": ["src-02", "src-15", "src-17"]},
+        {"claim_id": "claim-18", "dim": "evidence_detail", "claim": "天玑9600M公开规格（单一来源GSMArena，未经第二家证实）：1+3+4全大核、C1-Ultra最高4.21GHz、16MB L3+10MB SLC、LPDDR5X、UFS 4.1、Mali-G1 Ultra MC12、NPU 990。", "source_candidate_ids": ["src-15"]},
+        {"claim_id": "claim-19", "dim": "evidence_detail", "claim": "联发科官方稿未公布9600M完整规格与制程，仅称搭载两款芯片的手机「将于近期上市」（英文稿：本季度内）。", "source_candidate_ids": ["src-01", "src-02"]},
+        {"claim_id": "claim-20", "dim": "industry_value", "claim": "陈冠州发布会口径：2027年全球半导体TAM预估11.4万亿元人民币；2030年全球每月Token消耗量预估120千万亿、增长约24倍。", "source_candidate_ids": ["src-11"]},
+        {"claim_id": "claim-21", "dim": "limitation", "claim": "截至9月18日，所有性能与能效数据均来自联发科实验室或工程样机；首款量产机型vivo X500 Pro系列尚未发布，暂无量产机实测与续航数据。", "source_candidate_ids": ["src-14", "src-16"]},
+        {"claim_id": "claim-22", "dim": "mechanism", "claim": "「AI原生架构」的官方定义是把CPU/GPU/NPU/ISP做系统级协同（天玑智算融合架构＋天玑调度引擎），统一调度算力、电源与内存。", "source_candidate_ids": ["src-01", "src-07", "src-09"]},
+        {"claim_id": "claim-23", "dim": "use_case", "claim": "终端级联合落地：与vivo合作相机助手与「视频一键高光」，与OPPO合作LUMO灵感构图，并与《三角洲行动》解锁原生120帧光追。", "source_candidate_ids": ["src-07", "src-08"]},
+        {"claim_id": "claim-24", "dim": "uncertainty", "claim": "发布前泄露跑分（8月24日 vivo V2610 / MT6995 ENG，Geekbench 6.7.1 单核2653、多核7756，GPU锁频约2.9GHz）明显低于发布后工程机成绩，不可用于评估最终性能。", "source_candidate_ids": ["src-18"]},
+        {"claim_id": "claim-25", "dim": "uncertainty", "claim": "无署名转载稿中的两条说法未获一手证实、本期不可采用：「连续六年全球智能手机SoC市场份额第一」「拿下台积电2nm首批产能席位」。", "source_candidate_ids": ["src-20"]}
+      ],
+      "edges": [
+        {"from": "claim-01", "to": "claim-04", "relation": "supports"},
+        {"from": "claim-01", "to": "claim-15", "relation": "supports"},
+        {"from": "claim-01", "to": "claim-03", "relation": "supports"},
+        {"from": "claim-02", "to": "claim-01", "relation": "supports"},
+        {"from": "claim-03", "to": "claim-05", "relation": "supports"},
+        {"from": "claim-05", "to": "claim-07", "relation": "supports"},
+        {"from": "claim-06", "to": "claim-05", "relation": "supports"},
+        {"from": "claim-22", "to": "claim-07", "relation": "supports"},
+        {"from": "claim-22", "to": "claim-09", "relation": "supports"},
+        {"from": "claim-22", "to": "claim-10", "relation": "supports"},
+        {"from": "claim-11", "to": "claim-22", "relation": "supports"},
+        {"from": "claim-08", "to": "claim-07", "relation": "qualifies"},
+        {"from": "claim-12", "to": "claim-04", "relation": "contrasts"},
+        {"from": "claim-13", "to": "claim-07", "relation": "contrasts"},
+        {"from": "claim-14", "to": "claim-13", "relation": "qualifies"},
+        {"from": "claim-23", "to": "claim-15", "relation": "supports"},
+        {"from": "claim-16", "to": "claim-15", "relation": "supports"},
+        {"from": "claim-19", "to": "claim-15", "relation": "supports"},
+        {"from": "claim-16", "to": "claim-21", "relation": "qualifies"},
+        {"from": "claim-24", "to": "claim-14", "relation": "precedes"},
+        {"from": "claim-24", "to": "claim-14", "relation": "qualifies"},
+        {"from": "claim-17", "to": "claim-18", "relation": "qualifies"},
+        {"from": "claim-19", "to": "claim-18", "relation": "qualifies"},
+        {"from": "claim-20", "to": "claim-01", "relation": "supports"},
+        {"from": "claim-21", "to": "claim-07", "relation": "qualifies"},
+        {"from": "claim-25", "to": "claim-01", "relation": "qualifies"},
+        {"from": "claim-25", "to": "claim-04", "relation": "qualifies"}
+      ]
+    }
+  }
+}

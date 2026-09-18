@@ -25,6 +25,24 @@ For every task that changes code, configuration, Skill instructions, dependencie
 
 Ordinary read-only exploration, explanation, and repeated monitoring do not update task or handoff documents.
 
+## Delivery documentation (mandatory)
+
+Every delivery folder produced under `output/` ends with one human-readable `汇报文档.md` beside its
+manifest. It is the reference document for that period, not an optional extra, and it ships with the
+folder.
+
+1. Facts come from the tool, conclusions come from the agent:
+   `.venv\Scripts\python.exe scripts\build_report_doc.py --delivery <交付目录>` fills volume,
+   counts, gates, warnings and the document index. Never hand-copy those numbers.
+2. The tool regenerates automatic sections only. Sections 二/三/六 are human and keep whatever text is
+   already there, so re-running never destroys written analysis. `--force` discards them.
+3. Before declaring any delivery complete, `.venv\Scripts\python.exe scripts\build_report_doc.py
+   --delivery <交付目录> --check` must exit 0. Exit 2 means a human section still carries the TODO marker.
+4. Volume verdicts read `material_replica.delivered_bytes`. `download_budget.used` is download traffic,
+   including material rejected later; treating it as delivered volume hides an `insufficient` result.
+5. Attribute the sources of a shortfall (search-call failures, generic-word pollution, freshness
+   windows) in the human sections. The tool reports what happened; it cannot explain why.
+
 ## Runtime safety
 
 - On Windows, never use `os.kill(pid, 0)` or a console signal to probe PID existence. Follow `docs/handoff/RUNTIME_SAFETY.md`.

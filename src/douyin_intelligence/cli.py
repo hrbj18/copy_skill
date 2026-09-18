@@ -225,11 +225,15 @@ def build_parser() -> argparse.ArgumentParser:
     research_pack = sub.add_parser(
         "episode-research-pack", help="单主题研究包 episode-research-pack-v1：从旧交付发布或只读校验",
     )
-    research_pack.add_argument("action", choices=("build", "inspect"))
+    research_pack.add_argument(
+        "action", choices=("build", "inspect", "ledger-check", "render-ledger")
+    )
     research_pack.add_argument("--delivery-folder", help="build 需要的 material-replication 交付目录")
     research_pack.add_argument("--theme", help="build 可选：主题（缺省取交付清单）")
     research_pack.add_argument("--business-date", help="业务日期 YYYY-MM-DD")
     research_pack.add_argument("--episode-id", help="可选：显式 episode_id")
+    research_pack.add_argument("--ledger", help="台账 JSON 路径；build 可选，其他台账动作必填")
+    research_pack.add_argument("--out", help="render-ledger 可选：Markdown 输出路径")
     research_pack.add_argument(
         "--annotate-delivery", action="store_true",
         help="显式人工选项：把 research_pack_ref 写回旧交付清单（自动流水线永不写旧交付）",
@@ -514,13 +518,74 @@ def main(argv: list[str] | None = None) -> int:
             return 0 if result["status"] in {"success", "partial"} else 3
         if args.command == "episode-research-pack":
             from .episode_research_pack import (
+                DELIVERY_MANIFEST_NAME,
                 inspect_episode_pack,
                 publish_from_delivery,
                 research_pack_settings,
             )
+            from .research_ledger import (
+                ResearchLedgerError,
+                discover_research_ledger,
+                load_research_ledger,
+                render_ledger_markdown,
+                verify_ledger_identity,
+            )
+            if args.action == "ledger-check":
+                if not args.ledger:
+                    parser.error("episode-research-pack ledger-check 需要 --ledger")
+                try:
+                    load_research_ledger(args.ledger)
+                except ResearchLedgerError as exc:
+                    _print({"status": "fail", "errors": [str(exc)]})
+                    return 3
+                _print({"status": "pass", "errors": []})
+                return 0
+            if args.action == "render-ledger":
+                if not args.ledger:
+                    parser.error("episode-research-pack render-ledger 需要 --ledger")
+                inputs = load_research_ledger(args.ledger)
+                ledger_path = Path(args.ledger)
+                ledger_metadata = json.loads(ledger_path.read_text(encoding="utf-8"))
+                theme = args.theme or str(ledger_metadata.get("theme") or ledger_path.stem)
+                business_date = args.business_date or str(ledger_metadata.get("business_date") or "")
+                output = Path(args.out) if args.out else ledger_path.with_name(
+                    f"{theme}-{business_date}-事实台账.md"
+                )
+                output.parent.mkdir(parents=True, exist_ok=True)
+                output.write_text(
+                    render_ledger_markdown(inputs, theme=theme, business_date=business_date),
+                    encoding="utf-8",
+                )
+                _print({"status": "rendered", "output_path": str(output)})
+                return 0
             if args.action == "build":
                 if not args.delivery_folder:
                     parser.error("episode-research-pack build 需要 --delivery-folder")
+                delivery = Path(args.delivery_folder)
+                manifest = json.loads((delivery / DELIVERY_MANIFEST_NAME).read_text(encoding="utf-8"))
+                theme = args.theme or str(manifest.get("theme") or "")
+                business_date = args.business_date or str(manifest.get("business_date") or "")
+                ledger = Path(args.ledger) if args.ledger else None
+                ledger_diagnostics: dict[str, list[Path]] = {}
+                if ledger is None:
+                    ledger = discover_research_ledger(
+                        config, theme=theme, business_date=business_date,
+                        diagnostics=ledger_diagnostics,
+                    )
+                missing_identity = ledger_diagnostics.get("missing_identity") or []
+                if missing_identity:
+                    print(
+                        "警告：研究台账目录存在缺少 theme/business_date 的 JSON，未作为台账使用："
+                        + "、".join(str(item) for item in missing_identity),
+                        file=sys.stderr,
+                    )
+                research_inputs = load_research_ledger(ledger) if ledger is not None else None
+                if research_inputs is not None:
+                    # Explicit ``--ledger`` is not exempt: a ledger for another
+                    # episode must not be silently attached to this delivery.
+                    verify_ledger_identity(
+                        research_inputs, theme=theme, business_date=business_date, path=ledger,
+                    )
                 # Annotation writes into the finished legacy delivery, so it is a
                 # deliberate manual opt-in only: the flag, or the configured
                 # manual default.  The automatic pipeline path never annotates.
@@ -528,9 +593,9 @@ def main(argv: list[str] | None = None) -> int:
                     research_pack_settings(config)["annotate_delivery_manifest"]
                 )
                 result = publish_from_delivery(
-                    config, delivery_dir=args.delivery_folder, theme=args.theme,
-                    business_date=args.business_date, episode_id=args.episode_id,
-                    annotate_delivery=annotate,
+                    config, delivery_dir=delivery, theme=theme,
+                    business_date=business_date, episode_id=args.episode_id,
+                    annotate_delivery=annotate, research_inputs=research_inputs,
                 )
                 _print(result)
                 return 0 if result.get("status") in {"published", "reused", "noop"} else 3

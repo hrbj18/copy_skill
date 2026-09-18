@@ -7,6 +7,7 @@ from pathlib import Path
 from douyin_intelligence import replication_clips
 from douyin_intelligence.replication_clips import (
     ClipInterval,
+    derive_clip_intervals,
     derive_face_free_intervals,
     export_video_clips,
     remove_tree,
@@ -31,6 +32,17 @@ def test_derive_intervals_splits_long_runs_and_drops_short_tails() -> None:
 def test_derive_intervals_handles_empty_input() -> None:
     assert derive_face_free_intervals([], 10.0) == []
     assert derive_face_free_intervals([False], 0.0) == []
+
+
+def test_delivery_intervals_cover_timeline_without_face_input() -> None:
+    """Slice-mode material delivery may include people and must not need face-free frames."""
+    assert [(clip.start, clip.end) for clip in derive_clip_intervals(12.0, min_seconds=3.0, max_seconds=8.0)] == [
+        (0.0, 8.0), (8.0, 12.0)
+    ]
+    assert [(clip.start, clip.end) for clip in derive_clip_intervals(10.0, min_seconds=3.0, max_seconds=8.0)] == [
+        (0.0, 8.0)
+    ]
+    assert derive_clip_intervals(2.9, min_seconds=3.0, max_seconds=8.0) == []
 
 
 def test_export_without_ffmpeg_degrades_to_source_and_intervals(tmp_path: Path) -> None:

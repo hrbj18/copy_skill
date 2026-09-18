@@ -10,8 +10,19 @@ from douyin_intelligence.replication_theme import (
     _CATEGORY_ATTRIBUTES,
     _SUBJECT_ALIASES,
     _subject_split_terms,
+    RECOMMENDED_USAGES,
+    RIGHTS_STATUSES,
+    SOURCE_AUTHORITIES,
+    SOURCE_KINDS,
+    VISUAL_ROLES,
     delivery_folder_name,
+    event_terms,
     expand_keywords,
+    infer_material_labels,
+    material_labels_for,
+    material_profile_name,
+    material_profiles,
+    resolve_material_profile,
     sanitize_theme,
     subject_terms,
 )
@@ -485,3 +496,385 @@ def test_shipped_override_tables_are_effective() -> None:
     for theme, terms in (material.get("theme_subject_terms") or {}).items():
         assert terms, theme
         assert set(terms) <= set(subject_terms(theme, config)), theme
+
+
+# --------------------------------------------------------------------------- #
+# ``theme_material_profiles`` / ``theme_profile_map`` -- the genre-strategy
+# layer (2026-09-18).
+#
+# A profile only *describes* preferences and label vocabularies; it never
+# changes what may enter the pool (that stays with ``theme_subject_terms``).
+# Profile resolution and label inference are pure functions of the candidate's
+# platform/title/author plus the profile, so every branch below is offline and
+# reproducible, and no candidate is ever assumed official or licensed.
+# --------------------------------------------------------------------------- #
+
+_PROFILE_NAMES = (
+    "person_or_company_event",
+    "official_notice_or_security_event",
+    "product_or_industry_trend",
+)
+
+_PERSON_THEME = "特朗普致电黄仁勋"
+
+
+def _shipped_material_block() -> dict:
+    """The *raw* shipped ``material_replication`` block, read straight from disk.
+
+    Deliberately bypasses ``load_config()``: tests/conftest.py strips the opt-in
+    profile keys out of every ``load_config()`` payload, so only a direct read can
+    assert on what the repository actually ships.
+    """
+    config_path = Path(__file__).resolve().parents[1] / "config" / "content_intelligence.json"
+    payload = json.loads(config_path.read_text(encoding="utf-8"))
+    return payload["jobs"]["material_replication"]
+
+
+def _profile_config(**material_keys: object) -> dict:
+    return _material_config(**material_keys)
+
+
+def _label_config(**profile_overrides: object) -> dict:
+    """A config whose ``person_or_company_event`` carries explicit account tables.
+
+    Synthetic on purpose (mirrors ``_material_config``): an assertion pinned to
+    the shipped tables would only test the data file and rot on the next edit.
+    """
+    profile: dict = {
+        "label": "人物/企业事件",
+        "preferred_source_kinds": [
+            "official_original", "news_broadcast", "creator_commentary", "platform_video",
+        ],
+        "main_roles": ["event_direct", "subject_person", "news_anchor_or_reporter"],
+        "official_accounts": ["华为终端官方", "工信部"],
+        "news_accounts": ["央视新闻", "新华社"],
+    }
+    profile.update(profile_overrides)
+    return _profile_config(
+        theme_material_profiles={"default": {}, "person_or_company_event": profile},
+        theme_profile_map={_PERSON_THEME: "person_or_company_event"},
+    )
+
+
+def test_profile_defaults_when_the_block_is_absent() -> None:
+    config = _profile_config()
+
+    assert material_profile_name("任意主题", config) == "default"
+    profile = resolve_material_profile("任意主题", config)
+    assert profile["name"] == "default"
+    assert profile["label"]
+    assert set(profile["main_roles"]) <= set(VISUAL_ROLES)
+    assert set(profile["preferred_source_kinds"]) <= set(SOURCE_KINDS)
+    # The built-in lanes are still there, so a bare default is not vocabulary-free.
+    assert profile["role_terms"]["event_direct"]
+
+
+def test_explicit_theme_map_selects_the_configured_profile() -> None:
+    config = _profile_config(
+        theme_material_profiles={name: {"label": name} for name in ("default", *_PROFILE_NAMES)},
+        theme_profile_map={"手机集体涨价": "product_or_industry_trend"},
+    )
+
+    assert material_profile_name("手机集体涨价", config) == "product_or_industry_trend"
+    assert material_profile_name("未列出主题", config) == "default"
+    assert resolve_material_profile("手机集体涨价", config)["label"] == "product_or_industry_trend"
+
+
+def test_sanitized_base_is_accepted_as_a_profile_map_key() -> None:
+    raw = "手机集体涨价*"
+    base = sanitize_theme(raw, max_length=48)
+    assert base != raw  # the fixture really does differ from its base
+
+    config = _profile_config(
+        theme_material_profiles={"default": {}, "product_or_industry_trend": {}},
+        theme_profile_map={base: "product_or_industry_trend"},
+    )
+
+    assert material_profile_name(raw, config) == "product_or_industry_trend"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"theme_material_profiles": "不是字典"},
+        {"theme_material_profiles": {"person_or_company_event": "坏值"}},
+        {"theme_material_profiles": {}},
+        {"theme_profile_map": "不是字典"},
+        {"theme_profile_map": ["person_or_company_event"]},
+        {"theme_profile_map": {"主题": "未知档案"}},
+        {"theme_profile_map": {"主题": ""}},
+        {"theme_profile_map": {"主题": None}},
+    ],
+)
+def test_bad_profile_config_falls_back_to_default(bad: dict) -> None:
+    # A typo in the profile name must never silently pick a wrong strategy.
+    assert material_profile_name("主题", _profile_config(**bad)) == "default"
+    assert resolve_material_profile("主题", _profile_config(**bad))["name"] == "default"
+
+
+def test_underscore_keys_are_treated_as_comments() -> None:
+    profiles = material_profiles(
+        _profile_config(theme_material_profiles={"_comment": "x", "person_or_company_event": {}})
+    )
+
+    assert "_comment" not in profiles
+    assert "person_or_company_event" in profiles
+    assert "default" in profiles  # always present, so callers can index safely
+
+
+def test_three_profiles_differ_yet_all_admit_self_media() -> None:
+    profiles = {
+        "default": {"label": "通用"},
+        "person_or_company_event": {
+            "label": "人物/企业事件",
+            "main_roles": ["event_direct", "subject_person"],
+            "preferred_source_kinds": [
+                "official_original", "news_broadcast", "creator_commentary", "platform_video",
+            ],
+            "original_source_bonus": 0.15,
+            "heat_weight": 0.25,
+        },
+        "official_notice_or_security_event": {
+            "label": "官方通报/安全事件",
+            "main_roles": ["news_anchor_or_reporter", "event_direct"],
+            "preferred_source_kinds": [
+                "official_original", "news_broadcast", "platform_video", "creator_commentary",
+            ],
+            "original_source_bonus": 0.35,
+            "heat_weight": 0.15,
+        },
+        "product_or_industry_trend": {
+            "label": "产品/行业趋势",
+            "main_roles": ["product_or_scene", "commentary"],
+            "preferred_source_kinds": [
+                "official_original", "creator_commentary", "platform_video", "news_broadcast",
+            ],
+            "original_source_bonus": 0.2,
+            "heat_weight": 0.3,
+        },
+    }
+    config = _profile_config(
+        theme_material_profiles=profiles,
+        theme_profile_map={name: name for name in _PROFILE_NAMES},
+    )
+    resolved = {name: resolve_material_profile(name, config) for name in _PROFILE_NAMES}
+
+    # Three distinct, deterministic report labels and main-role orderings.
+    assert len({profile["label"] for profile in resolved.values()}) == 3
+    assert (
+        resolved["person_or_company_event"]["main_roles"]
+        != resolved["product_or_industry_trend"]["main_roles"]
+    )
+    assert resolved["official_notice_or_security_event"]["main_roles"][0] == "news_anchor_or_reporter"
+    # No profile hard-excludes self-media: a creator commentary source is always
+    # inside ``preferred_source_kinds`` (a soft preference, not a rejection).
+    for profile in resolved.values():
+        assert "creator_commentary" in profile["preferred_source_kinds"]
+    for name in _PROFILE_NAMES:
+        assert resolve_material_profile(name, config) == resolved[name]
+
+
+def test_official_account_yields_official_original_but_never_authorized() -> None:
+    labels = material_labels_for(
+        _PERSON_THEME, source="douyin", title="新品发布", author="华为终端官方", config=_label_config()
+    )
+
+    assert labels["source_kind"] == "official_original"
+    assert labels["source_authority"] == "official"
+    # Source nature and rights risk are separate fields: official ≠ licensed.
+    assert labels["rights_status"] == "review_required"
+
+
+def test_news_account_yields_news_broadcast() -> None:
+    labels = material_labels_for(
+        _PERSON_THEME, source="douyin", title="现场报道", author="央视新闻", config=_label_config()
+    )
+
+    assert labels["source_kind"] == "news_broadcast"
+    assert labels["source_authority"] == "news_media"
+    assert labels["rights_status"] == "review_required"
+
+
+def test_creator_marker_yields_creator_commentary() -> None:
+    labels = material_labels_for(
+        _PERSON_THEME, source="douyin", title="黄仁勋最新访谈 深度解读", author="科技老王", config=_label_config()
+    )
+
+    assert labels["source_kind"] == "creator_commentary"
+    assert labels["source_authority"] == "creator"
+    assert labels["rights_status"] == "review_required"
+
+
+def test_bare_platform_candidate_is_platform_video_with_unknown_authority() -> None:
+    labels = material_labels_for(
+        _PERSON_THEME, source="bilibili", title="随手拍的一段画面", author="路人甲", config=_label_config()
+    )
+
+    assert labels["source_kind"] == "platform_video"
+    # A plain upload carries no identifiable publisher -> never promoted to creator.
+    assert labels["source_authority"] == "unknown"
+    assert labels["rights_status"] == "unknown"
+
+
+def test_unrecognised_source_and_blank_candidate_degrade_to_unknown() -> None:
+    unknown_platform = material_labels_for(
+        _PERSON_THEME, source="someblog", title="一条普通视频", author="作者", config=_label_config()
+    )
+    assert unknown_platform["source_kind"] == "unknown"
+
+    blank = material_labels_for(_PERSON_THEME, config=_label_config())
+    assert blank["source_kind"] == "unknown"
+    assert blank["source_authority"] == "unknown"
+    assert blank["visual_role"] == "unknown"
+    assert blank["rights_status"] == "unknown"
+    assert blank["recommended_usage"] == "optional"
+
+
+@pytest.mark.parametrize(
+    ("title", "expected_role"),
+    [
+        ("记者现场连线报道", "news_anchor_or_reporter"),
+        ("完整采访实录", "event_direct"),
+        ("马斯克现身发布会现场", "event_direct"),
+        ("公司CEO演讲", "subject_person"),
+        ("新机开箱上手实拍", "product_or_scene"),
+        ("我眼中的这波行情", "unknown"),
+    ],
+)
+def test_visual_role_lanes_are_deterministic(title: str, expected_role: str) -> None:
+    labels = infer_material_labels(
+        source="douyin",
+        title=title,
+        author="路人",
+        profile=resolve_material_profile(_PERSON_THEME, _label_config()),
+    )
+
+    assert labels["visual_role"] == expected_role
+
+
+def test_profile_role_terms_override_a_single_lane_only() -> None:
+    base = resolve_material_profile(_PERSON_THEME, _label_config())
+    assert "现场" in base["role_terms"]["event_direct"]
+
+    custom = resolve_material_profile(
+        _PERSON_THEME, _label_config(role_terms={"event_direct": ["连线实录"]})
+    )
+
+    # The supplied lane replaces the built-in one...
+    assert custom["role_terms"]["event_direct"] == ("连线实录",)
+    # ...while every other lane keeps the built-in vocabulary.
+    assert custom["role_terms"]["product_or_scene"] == base["role_terms"]["product_or_scene"]
+    # And the replaced lane really does stop matching its old term.
+    replaced = infer_material_labels(source="douyin", title="会议现场", author="路人", profile=custom)
+    assert replaced["visual_role"] == "unknown"
+
+
+def test_recommended_usage_follows_the_profile_preferences() -> None:
+    config = _label_config(
+        preferred_source_kinds=["official_original", "news_broadcast"],
+        main_roles=["event_direct"],
+    )
+    profile = resolve_material_profile(_PERSON_THEME, config)
+
+    # Outside the preferred kinds -> optional (a hint, not a rejection).
+    creator = infer_material_labels(source="douyin", title="深度解读", author="老王", profile=profile)
+    assert creator["recommended_usage"] == "optional"
+    # Preferred kind + a main role -> main.
+    strong = infer_material_labels(source="douyin", title="完整采访实录", author="华为终端官方", profile=profile)
+    assert strong["recommended_usage"] == "main"
+    # Preferred kind but an unknown role -> supporting.
+    weak = infer_material_labels(source="douyin", title="随手拍", author="华为终端官方", profile=profile)
+    assert weak["recommended_usage"] == "supporting"
+
+
+def test_labels_only_use_the_canonical_vocabularies_and_are_stable() -> None:
+    profile = resolve_material_profile(_PERSON_THEME, _label_config())
+    labels = infer_material_labels(source="douyin", title="新机开箱", author="华为终端官方", profile=profile)
+
+    assert set(labels) == {
+        "source_kind", "source_authority", "visual_role", "recommended_usage", "rights_status",
+    }
+    assert labels["source_kind"] in SOURCE_KINDS
+    assert labels["source_authority"] in SOURCE_AUTHORITIES
+    assert labels["visual_role"] in VISUAL_ROLES
+    assert labels["recommended_usage"] in RECOMMENDED_USAGES
+    assert labels["rights_status"] in RIGHTS_STATUSES
+    assert (
+        infer_material_labels(source="douyin", title="新机开箱", author="华为终端官方", profile=profile)
+        == labels
+    )
+
+
+def test_infer_material_labels_tolerates_a_malformed_profile() -> None:
+    labels = infer_material_labels(source="douyin", title="", author="", profile=None)  # type: ignore[arg-type]
+
+    assert labels["source_kind"] == "platform_video"
+    assert labels["source_authority"] == "unknown"
+    assert labels["rights_status"] == "unknown"
+
+
+def test_profile_config_never_touches_the_three_word_tables() -> None:
+    """The profile layer is additive: it must not leak into search/gate/event words."""
+    plain = _profile_config()
+    with_profiles = _label_config()
+
+    for theme in ("苹果折叠屏", _TREND_THEME, "Microduck 机械鸭机器人"):
+        assert expand_keywords(theme, with_profiles) == expand_keywords(theme, plain), theme
+        assert subject_terms(theme, with_profiles) == subject_terms(theme, plain), theme
+        assert event_terms(theme, with_profiles) == event_terms(theme, plain), theme
+
+
+def test_shipped_profiles_and_map_are_well_formed() -> None:
+    material = _shipped_material_block()
+    profiles = material.get("theme_material_profiles") or {}
+    assert {"default", *_PROFILE_NAMES} <= set(profiles)
+
+    config = {"jobs": {"material_replication": material}}
+    mapping = material.get("theme_profile_map") or {}
+    assert mapping, "shipped profile map must bind at least one theme"
+    for theme, name in mapping.items():
+        assert name in profiles, (theme, name)
+        assert material_profile_name(theme, config) == name, theme
+        resolved = resolve_material_profile(theme, config)
+        assert resolved["label"], theme
+        assert set(resolved["main_roles"]) <= set(VISUAL_ROLES), theme
+        assert set(resolved["preferred_source_kinds"]) <= set(SOURCE_KINDS), theme
+
+
+def test_shipped_profiles_never_promote_a_platform_upload_to_official() -> None:
+    """The honest default: an unidentified upload stays platform_video/unknown."""
+    material = _shipped_material_block()
+    config = {"jobs": {"material_replication": material}}
+
+    labels = material_labels_for(
+        "手机集体涨价",
+        source="douyin",
+        title="手机集体涨价 现场实录",
+        author="某自媒体老王",
+        config=config,
+    )
+
+    assert labels["source_kind"] == "platform_video"
+    assert labels["source_authority"] == "unknown"
+    assert labels["rights_status"] == "unknown"
+
+
+def test_shipped_official_and_news_accounts_are_detected() -> None:
+    """Self-consistency: whatever the shipped tables name must actually take effect."""
+    material = _shipped_material_block()
+    config = {"jobs": {"material_replication": material}}
+    profiles = material_profiles(config)
+
+    seen_official = 0
+    for name, profile in profiles.items():
+        for account in profile["official_accounts"]:
+            labels = infer_material_labels(source="douyin", title="通报", author=account, profile=profile)
+            assert labels["source_kind"] == "official_original", (name, account)
+            assert labels["source_authority"] == "official", (name, account)
+            assert labels["rights_status"] == "review_required", (name, account)
+            seen_official += 1
+        for account in profile["news_accounts"]:
+            labels = infer_material_labels(source="douyin", title="报道", author=account, profile=profile)
+            assert labels["source_kind"] == "news_broadcast", (name, account)
+            assert labels["source_authority"] == "news_media", (name, account)
+    assert seen_official >= 1, "shipped official_notice profile declares no official account"

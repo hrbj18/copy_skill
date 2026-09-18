@@ -23,14 +23,15 @@ from typing import Any, Callable, Mapping
 from zoneinfo import ZoneInfo
 
 from .exporter import atomic_write_json
-from .face_metrics import FACE_FREE, FACE_UNAVAILABLE, FaceDetector
+from .face_metrics import FACE_UNAVAILABLE, FaceDetector
 from .media_processing import faster_whisper_status
 from .media_tools import media_tool_available, resolve_media_tool
 from .mediacrawler_patch import duration_patch_status
 from .replication_candidates import Candidate, collect_candidate_pool
-from .replication_clips import ClipInterval, build_clip_metadata, derive_face_free_intervals, export_video_clips, remove_tree
+from .replication_clips import ClipInterval, build_clip_metadata, derive_clip_intervals, export_video_clips, remove_tree
 from .replication_dedup import dedup_enabled, remember_delivered
 from .replication_delivery import (
+    CATALOG_NAME,
     DELIVERY_README,
     FOLDER_MAIN,
     FOLDER_PROCESS,
@@ -41,13 +42,16 @@ from .replication_delivery import (
     MAX_DELIVERY_FOLDER_BYTES,
     SOURCE_INDEX_NAME,
     SOURCE_INDEX_README,
+    DeliveryFolderOverLimit,
     build_manifest,
+    build_material_catalog,
     delivery_folder_bytes,
     ensure_delivery_tree,
     human_size,
     publish_directory,
     render_delivery_readme,
     validate_delivery_manifest,
+    write_material_catalog,
 )
 from .replication_script import build_script_skeleton, write_script_artifacts
 from .replication_selection import (
@@ -57,6 +61,7 @@ from .replication_selection import (
     invoke_downloader,
     is_video_candidate,
     material_replication_settings,
+    material_rank_key,
     measure_transferred_bytes,
     measured_duration_window_reject,
     prefilter_active,
@@ -74,7 +79,9 @@ from .replication_selection import (
 from .replication_theme import (
     delivery_folder_name,
     event_terms,
+    infer_material_labels,
     project_path,
+    resolve_material_profile,
     sanitize_theme,
     subject_terms,
 )
@@ -90,7 +97,6 @@ from .replication_visual import verify_videos, visual_verify_settings
 from .sources.base import CompositeMediaResolver, MediaResolutionError
 
 
-_FACE_RANK = {FACE_FREE: 0, "low_face": 1, "face_heavy": 2, FACE_UNAVAILABLE: 3}
 _USAGE_TAGS = ("开场钩子", "要点画面", "演示对比", "结论画面", "补充画面", "互动画面")
 _SUGGESTED_USE = ("hook", "key_points[1]", "demo_or_compare", "key_points[2]", "conclusion", "cta")
 
@@ -243,6 +249,45 @@ def _over_limit_warning(total: int) -> str:
         f"{_OVER_LIMIT_PREFIX}{human_size(total)}（{total} 字节）"
         f" > 上限 {human_size(MAX_DELIVERY_FOLDER_BYTES)}（{MAX_DELIVERY_FOLDER_BYTES} 字节）"
     )
+
+
+#: Profile labels (``replication_theme.infer_material_labels``) that travel to the
+#: delivery catalogue.  ``recommended_usage`` is a *hint* the catalog falls back to
+#: the actual main/support role for; the rest fall back to ``unknown``.
+_MATERIAL_LABEL_FIELDS = (
+    "source_kind", "source_authority", "visual_role", "recommended_usage", "rights_status",
+)
+
+
+def _catalog_detail(
+    candidate: Candidate,
+    relevance: dict[str, float],
+    labels: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Provenance/tag row for one delivered source, consumed by ``00-素材目录.json``.
+
+    Labels come from the profile layer's ``infer_material_labels`` result through
+    ``labels``; when a caller does not pass it they fall back to labels carried on
+    the candidate (``source_kind`` / ``source_authority`` / ``visual_role`` /
+    ``recommended_usage`` / ``rights_status``).  Anything that cannot be judged is
+    left absent, so the catalog falls back to ``unknown`` / the actual role: a
+    value that cannot be judged is never invented (2026-09-18 strategy §3.3).
+    """
+    detail: dict[str, Any] = {
+        "video_id": candidate.video_id,
+        "author": candidate.author,
+        "title": candidate.title,
+        "source_url": candidate.source_url,
+        "source": str(getattr(candidate, "source", "douyin") or "douyin"),
+        "heat_score": round(float(candidate.heat_score), 6),
+        "relevance_score": round(float(relevance.get(candidate.video_id, 0.0)), 6),
+    }
+    supplied = labels if isinstance(labels, Mapping) else {}
+    for key in _MATERIAL_LABEL_FIELDS:
+        value = supplied.get(key) or getattr(candidate, key, None)
+        if value:
+            detail[key] = value
+    return detail
 
 
 def _visual_verify_payload(
@@ -1023,11 +1068,24 @@ def run_material_replication(
         if validation_block is not None:
             download_run_log["validation"] = {"counts": validation_block["counts"]}
         atomic_write_json(process_dir / "run_log.json", download_run_log)
+        # 00-素材目录.json is written even here (empty in this mode): every
+        # delivery carries the catalog contract, so a downstream reader never has
+        # to special-case a folder that "should" have had one.
+        write_material_catalog(stage, build_material_catalog(
+            theme=theme, folder=folder, business_date=business_date, generated_at=manifest["generated_at"],
+            main_materials=[], supporting_materials=[], details={}, root=stage,
+        ))
         # Whole-folder size gate, run LAST so ``run_log.json`` is counted too (see
         # the full-chain path for the full rationale): the user's spec is on the
         # delivery directory as a whole, so a 04-原片-only or 02/03-only count would
         # be blind to the rest of the folder.
-        _apply_delivery_folder_size_gate(stage, manifest)
+        folder_total = _apply_delivery_folder_size_gate(stage, manifest)
+        if folder_total > MAX_DELIVERY_FOLDER_BYTES:
+            raise DeliveryFolderOverLimit(
+                f"交付目录合计 {human_size(folder_total)}（{folder_total} 字节）"
+                f"超过上限 {human_size(MAX_DELIVERY_FOLDER_BYTES)}（{MAX_DELIVERY_FOLDER_BYTES} 字节）；"
+                f"拒绝发布超限成品，产物保留在暂存目录 {stage}"
+            )
         warnings = list(manifest["warnings"])
         _publish(stage, destination, overwrite)
         research_pack = _maybe_publish_research_pack(
@@ -1141,73 +1199,89 @@ def run_material_replication(
     # selected source as a *whole file* instead of exporting 3~8 s face-free
     # clips.  A "figure + event" theme has no use for 8-second fragments: its
     # material is a full interview (the event itself) plus generic portraits of
-    # the same people (waving, greeting) that carry no event at all.  When the
-    # key is absent or disabled every line below is the historical behaviour,
-    # byte for byte -- the branches only exist behind ``direct_mode``.
+    # the same people (waving, greeting) that carry no event at all.  The
+    # *delivery* semantics (whole file vs slices) stay behind ``direct_mode``;
+    # the main/support split below is now the strategy **every** run uses.
     direct_cfg = settings.get("direct_delivery") or {}
     direct_mode = bool(direct_cfg.get("enabled"))
-    direct_event_terms = event_terms(theme or "", config) if direct_mode else []
     direct_min_seconds = float(direct_cfg.get("main_min_seconds") or 0)
 
-    ordered = sorted(
-        selected,
-        key=lambda item: (
-            _FACE_RANK.get(str(item["face"].get("face_class")), 3),
-            -float(item["candidate"].heat_score),
-            -float(item["probe"].get("duration_seconds") or 0),
-            item["candidate"].video_id,
-        ),
-    )
+    # Explainable, face-free material ordering (2026-09-18).  Face class is
+    # descriptive metadata only -- a themed run may legitimately need a host, an
+    # interview or an on-site recording on screen -- so the old face-first key
+    # (``_FACE_RANK``) is gone.  ``material_rank_key`` orders by theme hit ->
+    # event directness -> profile source/role bonus -> heat -> duration ->
+    # ``video_id``.  The event vocabulary is resolved for both modes (it used to
+    # be direct-only): that is what lets a full interview outrank a hotter generic
+    # portrait.  The profile layer supplies the source/role labels and the
+    # original-source bonus (``resolve_material_profile`` / ``infer_material_labels``);
+    # an official source is a small *bonus*, never an admission requirement, so a
+    # high-heat related creator can still become main material.
+    material_profile = resolve_material_profile(theme or "", config)
+    material_theme_terms = subject_terms(theme or "", config)
+    material_event_terms = event_terms(theme or "", config)
+    direct_event_terms = material_event_terms if direct_mode else []
+    material_labels = {
+        item["candidate"].video_id: infer_material_labels(
+            source=str(getattr(item["candidate"], "source", "") or ""),
+            title=item["candidate"].title,
+            author=item["candidate"].author,
+            profile=material_profile,
+        )
+        for item in selected
+    }
+
+    def _material_order_key(item: dict[str, Any]) -> tuple[Any, ...]:
+        return material_rank_key(
+            item["candidate"],
+            item.get("probe"),
+            theme_terms=material_theme_terms,
+            event_terms=material_event_terms,
+            labels=material_labels.get(item["candidate"].video_id),
+            profile=material_profile,
+        )
+
+    ordered = sorted(selected, key=_material_order_key)
     main_ids: set[str] = set()
     seen_authors: set[str] = set()
-    if direct_mode:
+    seen_sources: set[str] = set()
 
-        def _direct_main_key(item: dict[str, Any]) -> tuple[Any, ...]:
-            """Event-carrying first, then longest, then hottest.
-
-            A full interview *is* the event, so it must outrank a generic
-            portrait of the same person even when the portrait has more heat.
-            ``theme_event_terms`` supplies the vocabulary that tells the two
-            apart; with none configured nothing can discriminate, so length
-            decides and the run degrades gracefully instead of shipping nothing.
-            """
-            title = str(item["candidate"].title or "").casefold()
-            hits = sum(1 for term in direct_event_terms if term.casefold() in title)
-            duration = float(item["probe"].get("duration_seconds") or 0)
-            return (-hits, -duration, -float(item["candidate"].heat_score), item["candidate"].video_id)
-
-        def _fill_main(min_seconds: float) -> None:
-            for item in sorted(ordered, key=_direct_main_key):
-                if len(main_ids) >= 2:
-                    break
-                duration = float(item["probe"].get("duration_seconds") or 0)
-                if min_seconds and duration < min_seconds:
-                    continue
-                author = item["candidate"].author
-                if author in seen_authors:
-                    continue
-                seen_authors.add(author)
-                main_ids.add(item["candidate"].video_id)
-
-        _fill_main(direct_min_seconds)
-        if not main_ids and direct_min_seconds:
-            # The length floor keeps a short generic portrait from being mistaken
-            # for an interview.  When *nothing* in the pool is long enough, an
-            # empty 02-主素材 is the worse outcome -- a themed run over
-            # short-form footage would ship with no main material at all -- so
-            # the floor degrades to "longest available".
-            _fill_main(0.0)
-    else:
+    # Up to two mains, at most one per author.  A *soft* source-diversity
+    # constraint prefers two different platforms, but it is relaxed before the
+    # run is allowed to ship fewer than two mains -- so a single-source pool
+    # still gets its two best clips, and a high-heat creator is never displaced
+    # by an "official" clip merely for being a creator.
+    def _fill_main(min_seconds: float, *, require_new_source: bool) -> None:
         for item in ordered:
             if len(main_ids) >= 2:
-                break
-            if str(item["face"].get("face_class")) != FACE_FREE:
+                return
+            candidate = item["candidate"]
+            if candidate.video_id in main_ids:
                 continue
-            author = item["candidate"].author
+            duration = float(item["probe"].get("duration_seconds") or 0)
+            if min_seconds and duration < min_seconds:
+                continue
+            author = candidate.author
             if author in seen_authors:
                 continue
+            source = str(getattr(candidate, "source", "") or "")
+            if require_new_source and source and source in seen_sources:
+                continue
             seen_authors.add(author)
-            main_ids.add(item["candidate"].video_id)
+            if source:
+                seen_sources.add(source)
+            main_ids.add(candidate.video_id)
+
+    _fill_main(direct_min_seconds if direct_mode else 0.0, require_new_source=True)
+    if len(main_ids) < 2:
+        _fill_main(direct_min_seconds if direct_mode else 0.0, require_new_source=False)
+    if direct_mode and not main_ids and direct_min_seconds:
+        # The length floor keeps a short generic portrait from being mistaken for
+        # an interview.  When *nothing* in the pool is long enough, an empty
+        # 02-主素材 is the worse outcome -- a themed run over short-form footage
+        # would ship with no main material at all -- so the floor degrades to
+        # "longest available" (the first item in the ordering).
+        _fill_main(0.0, require_new_source=False)
 
     main_dir = stage / FOLDER_MAIN
     support_dir = stage / FOLDER_SUPPORT
@@ -1223,6 +1297,10 @@ def run_material_replication(
     main_materials: list[dict[str, Any]] = []
     supporting_materials: list[dict[str, Any]] = []
     material_sources: list[dict[str, Any]] = []
+    # Provenance for the material catalog, keyed by the delivered relative path:
+    # filled as each physical file lands, so an entry only exists for a file that
+    # was actually written (a failed copy records nothing).
+    catalog_details: dict[str, dict[str, Any]] = {}
     # Direct mode replaces the 04-原片 *video* copy with an index (see the loop
     # below); records are collected here and written once, after the whole loop,
     # so a crash part-way through records nothing.
@@ -1371,27 +1449,38 @@ def run_material_replication(
                 media=media_block, face=face_block, suggested_use=suggested_use, warnings=[],
             )
             atomic_write_json(target_dir / f"{prefix}.json", metadata)
-            (main_materials if is_main else supporting_materials).append({
+            record = {
                 "clip_id": direct_clip_id,
                 "file": metadata["file"],
                 "duration": duration,
                 "face_class": face_block["face_class"],
                 "suggested_use": suggested_use,
-            })
+            }
+            (main_materials if is_main else supporting_materials).append(record)
+            catalog_details[record["file"]] = _catalog_detail(
+                candidate, relevance, material_labels.get(candidate.video_id)
+            )
             clips_exported += 1
             continue
 
-        face_per_frame = face.get("face_per_frame") or []
-        intervals = derive_face_free_intervals(
-            [bool(flag) for flag in face_per_frame], duration,
-            min_seconds=min_clip, max_seconds=max_clip,
-            interval_seconds=float(face.get("sample_interval_seconds") or 1),
+        # Slice delivery still needs bounded 3~8s clips, but it must not delete
+        # the meaningful portions of a themed news/interview simply because a
+        # host or subject is visible.  ``face_per_frame`` is intentionally *not*
+        # an input to the interval planner: face data remains in the sidecar,
+        # manifest and catalog as descriptive metadata only.  In direct mode the
+        # source is already copied whole above; here we deterministically cover
+        # the source timeline in bounded chunks instead of deriving "no-face"
+        # intervals.
+        intervals = derive_clip_intervals(
+            duration,
+            min_seconds=min_clip,
+            max_seconds=max_clip,
         )
         intervals = intervals[:max_per_video]
         if clips_exported + len(intervals) > max_total:
             intervals = intervals[: max(0, max_total - clips_exported)]
         if not intervals:
-            warnings.append(f"{candidate.video_id} 未能反推 3~8 秒无人脸区间，仅保留原片")
+            warnings.append(f"{candidate.video_id} 未能生成 {min_clip:g}~{max_clip:g} 秒素材区间，仅保留原片")
             degraded = True
             continue
 
@@ -1426,6 +1515,9 @@ def run_material_replication(
                 "suggested_use": suggested_use,
             }
             (main_materials if is_main else supporting_materials).append(record)
+            catalog_details[record["file"]] = _catalog_detail(
+                candidate, relevance, material_labels.get(candidate.video_id)
+            )
             clips_exported += 1
 
     # Direct mode writes the 04-原片 *index* here, once, after every source file has
@@ -1442,8 +1534,8 @@ def run_material_replication(
     remember_delivered(config, delivered_records, theme=theme, delivered_at=_now_iso(config))
 
     # Run-level log of every truncated face sample -- both the ones that reached
-    # delivery (mild truncation: kept with ``low_confidence``) and the ones the
-    # class gate rejected (severe truncation: downgraded to ``unavailable``).  The
+    # delivery (mild truncation: kept with ``low_confidence``) and the ones a
+    # *cheaper* gate dropped after their downgrade to ``unavailable``.  The
     # readme renders this as 「人脸样本截断」 so a short sample is visible even
     # when the video itself was not delivered.
     face_truncated_samples: list[dict[str, Any]] = []
@@ -1606,6 +1698,17 @@ def run_material_replication(
                 for item in visual_payload.get("items") or []
             ],
         }
+    # 00-素材目录.json (strategy §3.4): the downstream selection contract.  It is
+    # derived from the *same* main/support records the manifest carries, so the
+    # catalog can never list a different set of entities.  Written *before* the
+    # manifest is validated so the self-check exercises it, and before the folder
+    # size gate so its bytes are counted.
+    material_catalog = build_material_catalog(
+        theme=theme, folder=folder, business_date=business_date, generated_at=manifest["generated_at"],
+        main_materials=main_materials, supporting_materials=supporting_materials,
+        details=catalog_details, root=stage,
+    )
+    write_material_catalog(stage, material_catalog)
     validation = validate_delivery_manifest(_write_manifest(stage, manifest))
     if validation["status"] != "pass":
         manifest["degraded"] = True
@@ -1664,7 +1767,15 @@ def run_material_replication(
         atomic_write_json(process_dir / "run_log.json", full_run_log)
         delivery_folder_total = _apply_delivery_folder_size_gate(stage, manifest)
     if delivery_folder_total > MAX_DELIVERY_FOLDER_BYTES:
-        degraded = True
+        # 200,000,000 bytes is a *hard* cap (strategy §3.5): refuse to publish an
+        # over-size delivery rather than degrade-and-ship it.  Raising here -- before
+        # ``_publish`` -- keeps publication atomic: the stage is left intact for
+        # inspection and the destination tree is never touched.
+        raise DeliveryFolderOverLimit(
+            f"交付目录合计 {human_size(delivery_folder_total)}（{delivery_folder_total} 字节）"
+            f"超过上限 {human_size(MAX_DELIVERY_FOLDER_BYTES)}（{MAX_DELIVERY_FOLDER_BYTES} 字节）；"
+            f"拒绝发布超限成品，产物保留在暂存目录 {stage}"
+        )
     _publish(stage, destination, overwrite)
     research_pack = _maybe_publish_research_pack(
         config, destination=destination, theme=theme, business_date=business_date, warnings=warnings,
@@ -1781,14 +1892,36 @@ def _maybe_publish_research_pack(
     the default the published semantic is still the one derived from the delivery.
     """
     from .episode_research_pack import publish_from_delivery, research_pack_settings
+    from .research_ledger import (
+        ResearchLedgerError,
+        discover_research_ledger,
+        load_research_ledger,
+        verify_ledger_identity,
+    )
 
     settings = research_pack_settings(config)
     if not settings["enabled"]:
         return None
+    research_inputs = None
+    try:
+        ledger = discover_research_ledger(config, theme=theme, business_date=business_date)
+        if ledger is not None:
+            research_inputs = load_research_ledger(ledger)
+            # A ledger whose own identity disagrees with this delivery must never be
+            # injected: even a canonical file name can carry another episode's facts.
+            verify_ledger_identity(
+                research_inputs, theme=theme, business_date=business_date, path=ledger
+            )
+            warnings.append(f"研究台账已注入：{ledger}")
+    except ResearchLedgerError as exc:
+        message = f"研究台账校验失败（旧交付不受影响）：{exc}"
+        warnings.append(message)
+        return {"status": "error", "error": str(exc)}
     try:
         result = publish_from_delivery(
             config, delivery_dir=destination, theme=theme, business_date=business_date,
             annotate_delivery=False, research_builder=research_builder,
+            research_inputs=research_inputs,
         )
     except Exception as exc:  # noqa: BLE001 - never mask the legacy delivery result
         warnings.append(f"研究包发布失败（旧交付不受影响）：{type(exc).__name__}: {exc}")

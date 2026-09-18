@@ -38,4 +38,5 @@
 - Material replication: `.venv\Scripts\python.exe -m douyin_intelligence.cli material-replication run --theme "苹果折叠屏手机" [--dry-run]`; `inspect --folder <交付目录>`; `doctor` (offline, no download).
 - Episode research pack: `.venv\Scripts\python.exe -m douyin_intelligence.cli episode-research-pack build --delivery-folder <交付目录> [--theme T] [--business-date YYYY-MM-DD]`; tests `tests/test_episode_research_pack.py` (frozen fixture digests) and `tests/test_workbench.py`.
 - Handoff audit: `.venv\Scripts\python.exe scripts/audit_handoff.py --root .`. Append history only with `scripts/append_process_record.py --root . --record <markdown>`.
+- Delivery report: `.venv\Scripts\python.exe scripts/build_report_doc.py --delivery <交付目录>` refreshes the automatic sections of `汇报文档.md` and preserves the human ones (sections 二/三/六; `--force` discards them). `--check` exits 2 until every human section is filled. Required for every `output/` delivery (AGENTS.md). Tests: `tests/test_report_doc.py`.
 - `promote-existing` is offline recovery; `simulate` is V1 compatibility only. Browser lifecycle tests live in `tests/test_browser_session.py`.

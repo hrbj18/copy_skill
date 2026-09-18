@@ -1200,14 +1200,21 @@ def _run_full_chain(tmp_path: Path, monkeypatch, *, face, rows) -> Path:
     return Path(result["output_dir"])
 
 
-def test_severely_truncated_face_sample_is_listed_and_blocks_selection(tmp_path: Path, monkeypatch) -> None:
+def test_severely_truncated_face_sample_is_listed_and_does_not_block_selection(
+    tmp_path: Path, monkeypatch
+) -> None:
     rows = [_row(f"v{index:02d}", f"作者{index}") for index in range(4)]
     output_dir = _run_full_chain(
         tmp_path, monkeypatch, face=_TruncatingFace(expected=60, emitted=13), rows=rows,
     )
     manifest = json.loads((output_dir / "清单.json").read_text(encoding="utf-8"))
-    # A 13/60 sample must not be trusted as face_free -> downgraded and rejected.
-    assert manifest["material_replica_sources"] == []
+    # A 13/60 sample must not be trusted as face_free -> downgraded to
+    # ``unavailable``.  Face class is descriptive only (2026-09-18), so the
+    # downgrade no longer refuses an otherwise eligible, on-topic source: the
+    # honest class still travels on every delivered row.
+    sources = manifest["material_replica_sources"]
+    assert sources, "人脸样本截断不再否决素材（face_class 仅描述性元数据）"
+    assert {item["face_class"] for item in sources} == {"unavailable"}
     truncated = manifest["face_truncated_samples"]
     assert {item["video_id"] for item in truncated} == {"v00", "v01", "v02", "v03"}
     assert all(item["expected_frames"] == 60 and item["emitted_frames"] == 13 for item in truncated)

@@ -13,8 +13,9 @@ Covered (V-numbers map to the review brief):
 * V3  the stop semantics + the "starve the item count" exchange ratio;
 * V4  zero-byte failures charge nothing and free their slot; a cache hit grows
       ``delivered_bytes`` only;
-* V7  ``bytes`` stays an exact alias of ``delivered_bytes``; the two
-      ``face_truncated_samples`` aggregation branches carry identical fields.
+* V7  ``bytes`` stays an exact alias of ``delivered_bytes``; a truncated face
+      sample is audited with identical fields whichever truncation branch it
+      lands in, and its face class never costs it the delivery.
 
 No source file is modified by this module.
 """
@@ -27,6 +28,11 @@ from pathlib import Path
 import pytest
 
 from douyin_intelligence.config import load_config
+from douyin_intelligence.face_metrics import (
+    FACE_FREE,
+    FACE_UNAVAILABLE,
+    SAMPLE_TRUNCATION_SEVERE_RATIO,
+)
 from douyin_intelligence.replication_pipeline import ReplicationDeps, run_material_replication
 from douyin_intelligence.replication_selection import DownloadBudget
 
@@ -436,7 +442,12 @@ def _run_full_chain_with_face(tmp_path, rows, face):
 
 
 class _MixedTruncatingFace:
-    """Severe truncation for even ids (rejected), mild for odd ids (delivered)."""
+    """Severe truncation for even ids (downgraded to ``unavailable``), mild for
+    odd ids (kept as ``face_free`` with ``low_confidence``).
+
+    Both outcomes are still delivered: the face class is descriptive metadata,
+    not an admission gate.
+    """
 
     backend = "opencv_yunet"
 
@@ -514,16 +525,60 @@ def test_v7_budget_layer_is_additive_only(tmp_path: Path) -> None:
 
 
 def test_v7_face_truncated_samples_field_parity_across_branches(tmp_path: Path) -> None:
-    """Both aggregation branches (delivered & rejected) must carry identical fields."""
+    """A truncated face sample is audited identically whichever branch it lands in.
+
+    The face class is descriptive metadata, never an admission gate, so a
+    *severely* truncated sample is no longer rejected: it is downgraded to
+    ``unavailable`` and delivered anyway, exactly like the mildly truncated one
+    that keeps ``face_free`` and is merely flagged ``low_confidence``.  The
+    parity contract this test protects is therefore between those two truncation
+    branches -- and between the run-level ``face_truncated_samples`` log and the
+    matching ``material_replica_sources`` record, which must agree field for
+    field.  No clip may be dropped for its face class.
+    """
     rows = [_row(f"v{i:02d}", f"作者{i}") for i in range(4)]
     out = _run_full_chain_with_face(tmp_path, rows, _MixedTruncatingFace())
     manifest = json.loads((out / "清单.json").read_text(encoding="utf-8"))
 
     samples = manifest.get("face_truncated_samples") or []
     assert samples, "the mixed batch must surface truncated samples"
-    flags = {item.get("truncated") for item in samples}
-    assert flags == {True}
-    delivered_flags = {item.get("delivered") for item in samples}
-    assert delivered_flags == {True, False}, "both branches must be exercised for a parity check"
-    key_sets = {frozenset(item.keys()) for item in samples}
+    assert {item.get("truncated") for item in samples} == {True}
+    assert {item.get("low_confidence") for item in samples} == {True}
+
+    # Both truncation branches are exercised, and each keeps its own semantics.
+    severe = [item for item in samples if item["face_class"] == FACE_UNAVAILABLE]
+    mild = [item for item in samples if item["face_class"] == FACE_FREE]
+    assert severe and mild, "each truncation branch must be exercised"
+    assert len(severe) + len(mild) == len(samples)
+    assert {item["face_class_reason"] for item in severe} == {"sample_truncated"}
+    assert {item["face_class_reason"] for item in mild} == {""}
+    for item in severe:
+        assert item["emitted_frames"] < item["expected_frames"] * SAMPLE_TRUNCATION_SEVERE_RATIO
+    for item in mild:
+        assert item["emitted_frames"] >= item["expected_frames"] * SAMPLE_TRUNCATION_SEVERE_RATIO
+    for item in samples:
+        assert item["emitted_frames"] < item["expected_frames"], "a truncated sample is short"
+
+    # Field parity across the branches: one key set, one value per key.
+    key_sets = {frozenset(item) for item in samples}
     assert len(key_sets) == 1, f"field sets differ between branches: {key_sets}"
+
+    # No clip was dropped for its face class: every audited sample was delivered.
+    assert {item.get("delivered") for item in samples} == {True}
+    counters = manifest["counters"]
+    assert counters["clips_rejected_face_heavy"] == 0
+    assert counters["face_checked"] == len(rows)
+    assert [
+        item for item in manifest["material_replica"]["rejected"] if item.get("stage") == "face"
+    ] == [], "the face class must not reject a candidate"
+
+    # The run-level log and the per-source record agree field for field.
+    sources = {item["video_id"]: item for item in manifest["material_replica_sources"]}
+    assert set(sources) == {item["video_id"] for item in samples}
+    for item in samples:
+        source = sources[item["video_id"]]
+        for field in (
+            "face_class", "face_class_reason", "expected_frames",
+            "emitted_frames", "sample_coverage", "truncated", "low_confidence",
+        ):
+            assert item[field] == source[field], f"{item['video_id']}: {field} differs"
