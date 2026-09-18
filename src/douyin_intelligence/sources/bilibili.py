@@ -336,15 +336,27 @@ class BilibiliSource:
 
         candidates: list[Candidate] = []
         failed_keywords: list[str] = []
+        empty_keywords: list[str] = []
         used_keywords: list[str] = []
+        query_rewrites: dict[str, str] = {}
         returned = 0
         succeeded_any = False
 
         for keyword in to_search:
             used_keywords.append(keyword)
+            # bilibili answers a keyword *containing whitespace* with an empty
+            # result set -- `code=0` / `"OK"` and no `data.result` -- under both
+            # the `+` and the `%20` encoding (verified live 2026-09-18 on
+            # `日本 错误历史观` / `日本 AI 篡改` / `美国大模型 日本`, while the
+            # whitespace-free spelling of the same phrase returned hits).  The
+            # platform tokenises the phrase itself, so the joined spelling is the
+            # searchable one; the operator's wording survives as the label.
+            query = _collapse_query_whitespace(keyword)
+            if query != keyword:
+                query_rewrites[keyword] = query
             params = {
                 "search_type": "video",
-                "keyword": keyword,
+                "keyword": query,
                 "page": 1,
                 "page_size": per_keyword,
                 "order": "totalrank",
@@ -357,15 +369,29 @@ class BilibiliSource:
             items = data.get("result") if isinstance(data, dict) else None
             if status == 200 and isinstance(payload, dict) and payload.get("code") == 0 and items is not None:
                 succeeded_any = True
+                # The cap is per keyword: ``per_keyword`` is the page size asked
+                # for *each* keyword (the Douyin semantics this mirrors), so one
+                # keyword must not starve the rest of the list.  A global counter
+                # used to stop the whole loop as soon as the first keyword filled
+                # the page, silently reducing an N-keyword run to its first term.
+                kept = 0
                 for item in items:
-                    if returned >= per_keyword:
+                    if kept >= per_keyword:
                         break
                     if not isinstance(item, dict):
                         continue
+                    kept += 1
                     returned += 1
                     candidate = self._to_candidate(item, keyword)
                     if candidate is not None:
                         candidates.append(candidate)
+            elif status == 200 and isinstance(payload, dict) and payload.get("code") == 0:
+                # A well-formed answer with no ``result`` list means "this query
+                # matched nothing": a normal miss, not a broken request.  It must
+                # not be reported as "retried N times and still failed", and it
+                # must not turn the whole source into ``failed``.
+                succeeded_any = True
+                empty_keywords.append(keyword)
             else:
                 failed_keywords.append(keyword)
                 warnings.append(
@@ -390,7 +416,10 @@ class BilibiliSource:
             "returned": returned,
             "matched": len(candidates),
             "failed_keywords": failed_keywords,
+            "empty_keywords": empty_keywords,
         }
+        if query_rewrites:
+            report["query_rewrites"] = query_rewrites
         error = ""
         if status_name == "failed":
             error = "所有关键词的 B站搜索请求均失败"
@@ -655,6 +684,22 @@ class BilibiliSource:
 # Small pure helpers
 # --------------------------------------------------------------------------- #
 _HIGHLIGHT_RE = re.compile(r"<[^>]+>")
+_ANY_WHITESPACE = re.compile(r"\s+")
+
+
+def _collapse_query_whitespace(value: str) -> str:
+    """Join a whitespace-separated keyword into the spelling bilibili answers.
+
+    bilibili's video-search endpoint returns an empty result set for any keyword
+    that contains whitespace -- ``日本 错误历史观`` is unanswerable while
+    ``日本错误历史观`` returns hits (see :meth:`BilibiliSource.search`).  For a
+    keyword that already carries no whitespace the join is the identity, so such
+    a keyword travels on the wire byte-for-byte as it did before.
+    """
+    text = str(value or "")
+    if not _ANY_WHITESPACE.search(text):
+        return text
+    return _ANY_WHITESPACE.sub("", text)
 
 
 def _strip_highlight(value: Any) -> str:

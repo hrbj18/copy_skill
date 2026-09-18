@@ -334,6 +334,93 @@ def test_keyword_truncation_is_reported() -> None:
     assert any("关键词截断" in warning for warning in result.warnings)
 
 
+def test_each_keyword_gets_its_own_page_quota() -> None:
+    """``per_keyword`` caps *each* keyword -- the Douyin semantics it mirrors.
+
+    Regression (found live 2026-09-18): a single *global* counter stopped the
+    loop as soon as the first keyword filled the page, so an N-keyword run
+    silently delivered only the first term's hits -- a 6-keyword probe against
+    the production ``pool_size=80`` returned 10 candidates, every one of them
+    from keyword #1.  That made the whole Bilibili pool a single-keyword pool.
+    """
+    six = [_item(f"BV{i:0>10}", f"标题{i}") for i in range(6)]
+    by_keyword = {"kw1": six, "kw2": six}
+    source, _fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (SEARCH_FRAG, _search_handler(by_keyword))]
+    )
+
+    result = source.search(["kw1", "kw2"], 40, config=load_config())
+
+    assert result.report["per_keyword"] == 4  # budget // 10
+    # 4 per keyword, not 4 in total.
+    assert len(result.candidates) == 8
+    assert {c.source_keyword for c in result.candidates} == {"kw1", "kw2"}
+    assert result.report["returned"] == 8
+
+
+def test_whitespace_keyword_is_joined_before_the_request() -> None:
+    """Regression: bilibili answers a *whitespace* keyword with an empty set.
+
+    Verified live 2026-09-18: ``日本 错误历史观`` / ``日本 AI 篡改`` /
+    ``美国大模型 日本`` all answered ``code=0`` / ``"OK"`` with no
+    ``data.result`` under **both** the ``+`` and the ``%20`` encoding, while
+    ``日本错误历史观`` returned hits.  The request must therefore carry the
+    joined spelling, while the candidate keeps the operator's wording as its
+    label (``source_keyword``) so the report still shows what was asked for.
+    """
+    by_keyword = {"日本错误历史观": [_item("BV1uUbG6FEfb", "日本错误历史观污染大模型")]}
+    source, fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (SEARCH_FRAG, _search_handler(by_keyword))]
+    )
+
+    result = source.search(["日本 错误历史观"], 40, config=load_config())
+
+    assert result.status == "success"
+    assert [_keyword_from(url) for url in fetcher.calls_for(SEARCH_FRAG)] == ["日本错误历史观"]
+    assert result.candidates[0].source_keyword == "日本 错误历史观"
+    assert result.report["query_rewrites"] == {"日本 错误历史观": "日本错误历史观"}
+    assert result.report["empty_keywords"] == []
+
+
+def test_whitespace_free_keyword_travels_unchanged() -> None:
+    """A single-phrase keyword must go on the wire byte-for-byte as before."""
+    by_keyword = {"数字军国主义": [_item("BV1uUbG6FEfb", "数字军国主义辨析")]}
+    source, fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (SEARCH_FRAG, _search_handler(by_keyword))]
+    )
+
+    result = source.search(["数字军国主义"], 40, config=load_config())
+
+    assert [_keyword_from(url) for url in fetcher.calls_for(SEARCH_FRAG)] == ["数字军国主义"]
+    assert "query_rewrites" not in result.report
+
+
+def test_empty_result_set_is_a_miss_not_a_failure() -> None:
+    """A well-formed "no results" answer must not be reported as a failure.
+
+    bilibili answers a hopeless query with ``code=0`` / ``"OK"`` and no
+    ``data.result``.  The old branch read that as "retried N times and still
+    failed", which set ``status="failed"`` and emitted a misleading warning that
+    even claimed a retry that never happened.
+    """
+    source, fetcher, _sleeper = _make_source(
+        [(HOME_FRAG, (200, {"code": 0})), (NAV_FRAG, (200, _nav_payload(0))),
+         (SEARCH_FRAG, (200, {"code": 0, "message": "OK", "data": {"numResults": 0}}))]
+    )
+
+    result = source.search(["无人问津的关键词"], 40, config=load_config())
+
+    assert result.status == "no_match"
+    assert result.error == ""
+    assert result.report["failed_keywords"] == []
+    assert result.report["empty_keywords"] == ["无人问津的关键词"]
+    assert not any("失败" in warning for warning in result.warnings)
+    assert len(fetcher.calls_for(SEARCH_FRAG)) == 1  # no pointless retry
+
+
 def test_empty_keywords_skip_the_network() -> None:
     source, fetcher, _sleeper = _make_source([(HOME_FRAG, (200, {"code": 0}))])
     result = source.search([], 40, config=load_config())
