@@ -38,6 +38,7 @@ third_party/MediaCrawler/*_user_data_dir/
 .pytest*/
 .pytest_*
 director-pytest-*/
+qa_final_tmp/
 .tmp/
 logs/
 

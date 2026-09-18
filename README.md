@@ -11,7 +11,7 @@
 - 从受限公开新闻源和固定查询矩阵发现科技事件线索。
 - 为少量已选新闻查找视觉素材，并输出每日素材交换包。
 - 按主题执行素材复刻：扩展关键词、采集候选池，在下载前做主体词准入与时效过滤，产出 `MM.DD<主题>复刻视频/` 交付目录。
-- 以**题材相关性**为唯一硬门槛（人脸只作描述性元数据，不决定准入），按题材 Profile 决定主/辅素材；交付目录整体不超过 `200,000,000` 字节。
+- 准入主闸门是**题材相关性**（人脸已降级为描述性元数据，不再决定准入）；下载前叠加时效窗口与主体词命中过滤，下载后再做完整性校验。按题材 Profile 决定主/辅素材，交付目录整体不超过 `200,000,000` 字节。
 - 交付目录内附机器可读的 `00-素材目录.json`，作为下游（Haike / OpenMontage）的选择契约。
 - 对入选源片自动抽帧 OCR 做视觉佐证，并对交付素材做跨期去重。
 - 素材源可插拔：抖音 / yt-dlp / B站；下载统一经 `CompositeMediaResolver` 解析。
@@ -23,7 +23,7 @@
 
 项目代码和自动化测试已经覆盖采集、聚类、排序、内容补全、素材输出、浏览器复用及 Windows 进程安全等主要路径；截至 2026-09-18 全量 `1109 passed / 0 failed`。
 
-其中**按主题素材复刻**是当前最成熟的一环。2026-09-18 实跑 `9.18日本AI篡改历史观复刻视频`：候选池 62 条 → 下载 11 条 → 校验剔除 1 条坏件 → 入选 9 条（2 主 + 7 辅），目录合计 `89,426,232` 字节（上限 `200,000,000`），`delivered_bytes` 达标，`status=success`、`degraded=false`。本期另有 15 条因超出时效被剔除，且**无一条素材因人脸被淘汰**。
+其中**按主题素材复刻**是当前最成熟的一环。2026-09-18 实跑 `9.18日本AI篡改历史观复刻视频`（数字取自该期 `清单.json` 的 `counters` / `validation`）：候选池 62 条，下载前剔除 15 条超期与多条 0 主体词命中；完整性校验 11 条、其中 1 条判 `duration_mismatch` 剔除；**最终入选 9 条（2 主 + 7 辅）**，`delivered_bytes = 89,217,332`（窗口 `73,400,320`~`104,857,600`），`status=success`、`degraded=false`，且**无一条素材因人脸被淘汰**。交付目录在发布时刻记录为 `89,412,778` 字节（上限 `200,000,000`）；事后补写 `汇报文档.md` 后当前磁盘合计 `89,426,232` 字节。
 
 真实每日运行仍可能得到 `partial`。最近一次完整诊断中，公开文章正文请求大面积超时，模型整理调用失败，严格的人读新闻卡片数量为零。因此**自动生成的每日新闻榜**暂不应视为稳定成品；当前项目更适合作为“抖音关注度采集、指定新闻素材整理和下游交接工具”。
 
@@ -35,19 +35,15 @@
 - 可用的 Chromium/Chrome 浏览器
 - `uv`，推荐用于安装 Python 依赖
 
-MediaCrawler 作为 Git 子模块引用。首次克隆请使用：
+MediaCrawler 在 `.gitmodules` 里被声明为子模块（上游 `https://github.com/NanmiCoder/MediaCrawler.git`），但**本仓库并没有把它记录成 gitlink**：`git submodule status` 输出为空，`git ls-tree HEAD third_party/` 亦为空。因此 `git clone --recurse-submodules` 与 `git submodule update --init` **都不会把它拉下来**——首次克隆用普通克隆即可：
 
 ```powershell
-git clone --recurse-submodules https://github.com/hrbj18/copy_skill.git
+git clone https://github.com/hrbj18/copy_skill.git
 cd copy_skill
 uv sync --dev
 ```
 
-缺少子模块时可执行：
-
-```powershell
-git submodule update --init --recursive
-```
+确实需要 MediaCrawler 时，请按 `.gitmodules` 里的 URL 自行获取并放到 `third_party/MediaCrawler/`。该路径（连同 `data/`、`browser_data/`、`*_user_data_dir/`）已被 `.gitignore` 忽略，不会进入版本库。
 
 ## 本地配置
 
@@ -79,12 +75,13 @@ uv run douyin-intelligence workbench
 uv run douyin-intelligence daily-material-exchange run --business-date 2026-09-08
 ```
 
-按主题复刻素材（产出交付目录，不进入仓库）。该步骤会自行抽帧清洗，**请先关掉宿主的批量删除保护**，否则运动分析阶段会被中断：
+按主题复刻素材（产出交付目录，不进入仓库）：
 
 ```powershell
-$env:CODEBUDDY_SAFE_DELETE_ENABLED = "0"
 uv run douyin-intelligence material-replication run --theme "<主题>" --pool-size 80 --business-date "2026-09-18"
 ```
+
+⚠️ **运行环境要求（宿主层，不是项目代码契约）**：该流程会在运动分析阶段批量清理自己的抽帧文件。若由带批量删除保护的宿主进程驱动（如 WorkBuddy 的 agent 会话，阈值 50 文件/回合），该阶段会被 `SAFE_DELETE_BULK_CONFIRM_REQUIRED` 中断、整批作废——2026-09-18 实测如此。此时需在宿主层关闭该保护（例如 `CODEBUDDY_SAFE_DELETE_ENABLED=0`）；在普通终端里直接运行不受影响，`src/` 下也没有对该变量的任何引用。
 
 `material-replication` 的准入闸门、视觉佐证与体积口径见 `docs/handoff/CURRENT_STATUS.md`。
 
